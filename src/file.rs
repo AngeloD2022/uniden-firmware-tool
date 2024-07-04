@@ -46,6 +46,12 @@ struct FWMetadata {
     new_merge_file: bool
 }
 
+
+fn parse_basic_file(cursor: &mut Cursor<&Vec<u8>>, ) {
+
+}
+
+
 pub struct UnidenFirmware {
     metadata: Option<FWMetadata>,
     files: Vec<FWFile>,
@@ -81,8 +87,8 @@ impl UnidenFirmware {
         );
         println!("First: {:x}", first_element);
 
-        let ui_nu_len = alter_length(first_element & 0xFFFFFF00);
-        let flag = (first_element >> 0x18) & 0x1;
+        let ui_nu_len = alter_length(first_element & 0xFFFFFF);
+        let flag_includes_sound_db = (first_element >> 0x18) & 0x1;
 
         let dsp_nu_len = alter_length(
             i32::from_le_bytes(cursor.read_n(4)?.try_into().unwrap())
@@ -92,7 +98,7 @@ impl UnidenFirmware {
         );
 
         let mut sound_db_nu_len = 0;
-        if flag == 1 {
+        if flag_includes_sound_db == 1 {
             let slice = &cursor.read_n(12)?[9..];
             sound_db_nu_len = i32::from_le_bytes(slice.try_into().unwrap());
         }
@@ -102,12 +108,12 @@ impl UnidenFirmware {
             cursor.seek(ui_nu_len as u64);
 
             let arr = cursor.read_n(9)?;
-            let mv_data = i16::from_le_bytes(arr[0..3].try_into().unwrap());
+            let mv_data = i16::from_le_bytes(arr[0..2].try_into().unwrap());
 
             let model = RDModel::from_data(mv_data);
             let ui_nu_version = rd_version(mv_data);
 
-            if String::from_utf8(arr[3..].to_vec()).unwrap() != "DRSWMAI" {
+            if String::from_utf8(arr[2..].to_vec()).unwrap() != "DRSWMAI" {
                 // todo: replace this
                 panic!("Wrong format.");
             }
@@ -120,6 +126,8 @@ impl UnidenFirmware {
             }));
         }
 
+
+
         todo!()
     }
 
@@ -127,3 +135,6 @@ impl UnidenFirmware {
         todo!()
     }
 }
+
+
+

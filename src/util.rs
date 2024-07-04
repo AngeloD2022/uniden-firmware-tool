@@ -30,7 +30,7 @@ impl CursorHelper for Cursor<&Vec<u8>> {
     }
 
     fn read_n(&mut self, n: usize) -> io::Result<Vec<u8>> {
-        read_n_bytes(self, 1)
+        read_n_bytes(self, n)
     }
 
     fn seek(&mut self, n: u64) {
