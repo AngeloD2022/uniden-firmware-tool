@@ -24,11 +24,11 @@ enum FWFile {
     UiStm(FileInfo),
     UiNu2(FileInfo),
     DspNu(FileInfo),
-    DspStmfNu(FileInfo),
+    DspStm(FileInfo),
     DspNu2(FileInfo),
     DspNu3(FileInfo),
     GpsNu(FileInfo),
-    GpsStmf(FileInfo),
+    GpsStm(FileInfo),
     GpsNu2(FileInfo),
     GpsNu3(FileInfo),
     SoundDbnu(FileInfo),
@@ -48,11 +48,11 @@ impl FWFile {
             FWFile::UiStm(_) => "ui_stm.bin".into(),
             FWFile::UiNu2(_) => "ui_nu2.bin".into(),
             FWFile::DspNu(_) => "dsp_nu.bin".into(),
-            FWFile::DspStmfNu(_) => "dsp_stmf_nu.bin".into(),
+            FWFile::DspStm(_) => "dsp_stm.bin".into(),
             FWFile::DspNu2(_) => "dsp_nu2.bin".into(),
             FWFile::DspNu3(_) => "dsp_nu3.bin".into(),
             FWFile::GpsNu(_) => "gps_nu.bin".into(),
-            FWFile::GpsStmf(_) => "gps_stmf.bin".into(),
+            FWFile::GpsStm(_) => "gps_stm.bin".into(),
             FWFile::GpsNu2(_) => "gps_nu2.bin".into(),
             FWFile::GpsNu3(_) => "gps_nu3.bin".into(),
             FWFile::SoundDbnu(_) => "sound_dbnu.bin".into(),
@@ -283,6 +283,38 @@ impl UnidenFirmware {
                             _ => unreachable!()
                         }
                     );
+                }
+                "BLES" | "KEYS" | "LSRS" | "STUI" | "STDS" | "STGP" | "N2UI" | "N2DS" | "N3DS" | "N2GP" | "N3GP" => {
+                    let length_modifier = if switch == "BLES" {1024} else {512};
+                    let length = (current_length / length_modifier + 1) * length_modifier;
+                    let expected_termstr = format!("DRSW{}", switch[0..3]);
+
+                    let (offset, version, term_str) = parse_file_basic(&mut cursor, length)?;
+
+                    if expected_termstr != term_str {
+                        panic!("Wrong termination string!");
+                    }
+
+                    let file = FileInfo {
+                        length,
+                        offset,
+                        version,
+                    };
+
+                    files.push(match switch.as_ref() {
+                        "BLES" => FWFile::Ble(file),
+                        "KEYS" => FWFile::Keypad(file),
+                        "LSRS" => FWFile::LaserIf(file),
+                        "STUI" => FWFile::UiStm(file),
+                        "STDS" => FWFile::DspStm(file),
+                        "STGP" => FWFile::GpsStm(file),
+                        "N2UI" => FWFile::UiNu2(file),
+                        "N2DS" => FWFile::DspNu2(file),
+                        "N3DS" => FWFile::DspNu3(file),
+                        "N2GP" => FWFile::GpsNu2(file),
+                        "N3GP" => FWFile::GpsNu3(file),
+                        _ => unreachable!(),
+                    });
                 }
                 _ => {
                     if switch[2..4].to_string() == "SD" {
