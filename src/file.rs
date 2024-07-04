@@ -70,7 +70,7 @@ impl FWFile {
 
 struct FWMetadata {
     model: RDModel,
-    format_version: i16,
+    format_version: i32,
     new_merge_file: bool
 }
 
@@ -287,12 +287,12 @@ impl UnidenFirmware {
                 "BLES" | "KEYS" | "LSRS" | "STUI" | "STDS" | "STGP" | "N2UI" | "N2DS" | "N3DS" | "N2GP" | "N3GP" => {
                     let length_modifier = if switch == "BLES" {1024} else {512};
                     let length = (current_length / length_modifier + 1) * length_modifier;
-                    let expected_termstr = format!("DRSW{}", switch[0..3]);
+                    let expected_termstr = format!("DRSW{}", switch[0..3].to_string());
 
                     let (offset, version, term_str) = parse_file_basic(&mut cursor, length)?;
 
                     if expected_termstr != term_str {
-                        panic!("Wrong termination string!");
+                        panic!("Wrong termination sequence: {}", switch)
                     }
 
                     let file = FileInfo {
@@ -315,6 +315,43 @@ impl UnidenFirmware {
                         "N3GP" => FWFile::GpsNu3(file),
                         _ => unreachable!(),
                     });
+                }
+                "STSD" | "SUSD" => {
+                    let expected_termstr = format!("DRSW{}", switch[0..3].to_string());
+                    cursor.seek(current_length as u64 - 12);
+
+                    let arr = cursor.read_n(12)?;
+                    let vbuf = decode_old_model(SOUND_DB_KEY, &arr, 0, 4);
+                    let version = rd_version(
+                        i32::from_le_bytes(vbuf.try_into().unwrap()) as i16
+                    );
+
+                    if switch == "SUSD" {
+                        cursor.seek(2);
+                    }
+
+                    let termstr = stfu!(cursor.read_n(7)?);
+                    if expected_termstr != termstr {
+                        panic!("Wrong termination sequence: {}", switch)
+                    }
+
+                    let file = FileInfo {
+                        length: current_length as i32,
+                        offset: current_offset as i32,
+                        version: version as i32,
+                    };
+
+                    files.push(match switch.as_ref() {
+                        "STSD" => FWFile::SoundDbla1(file),
+                        "SUSD" => FWFile::SoundDbla2(file),
+                        _ => unreachable!()
+                    });
+                }
+                "NMGF" => {
+                    if cursor.position() == cursor.get_ref().len() as u64 {
+                        metadata.new_merge_file = true;
+                        metadata.format_version = i32::from_le_bytes(arr[8..12].try_into().unwrap())
+                    }
                 }
                 _ => {
                     if switch[2..4].to_string() == "SD" {

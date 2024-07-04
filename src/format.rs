@@ -119,10 +119,13 @@ pub(crate) fn decode_old_model(key: u8, data: &[u8], offset: usize, length: usiz
         buffer[i + 3] += (data[i + 2 + offset] & 0xC0) >> 2;
         buffer[i + 3] += data[i + 3 + offset] & 0xC0;
 
-        buffer[i] -= key;
-        buffer[i + 1] -= key;
-        buffer[i + 2] -= key;
-        buffer[i + 3] -= key;
+        buffer[i] = (buffer[i] as i8 - key as i8) as u8;
+        buffer[i + 1] = (buffer[i + 1] as i8 - key as i8) as u8;
+        buffer[i + 2] = (buffer[i + 2] as i8 - key as i8) as u8;
+        buffer[i + 3] = (buffer[i + 3] as i8 - key as i8) as u8;
+        // buffer[i + 1] -= key;
+        // buffer[i + 2] -= key;
+        // buffer[i + 3] -= key;
     }
 
     buffer
