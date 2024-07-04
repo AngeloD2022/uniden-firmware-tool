@@ -266,6 +266,10 @@ impl UnidenFirmware {
 
                     file.version = i32::from_le_bytes(arr[4..8].try_into().unwrap());
 
+                    if switch == "GASD" {
+                        cursor.seek(2);
+                    }
+
                     let term_string = stfu!(cursor.read_n(7)?);
                     if (term_string != "DRSWGDB" && switch == "GPSD") ||
                         (term_string != "DRSWGAE" && switch == "GASD") {
