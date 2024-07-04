@@ -4,7 +4,6 @@ use crate::format::{
     SOUND_DB_KEY,
 };
 use crate::util::{alter_length, CursorHelper};
-use binrw::helpers::count;
 use std::io::Cursor;
 use std::{fs, io};
 
@@ -23,7 +22,7 @@ struct GpsDbFileInfo {
     country: Option<GpsDbCountry>,
 }
 
-enum FWFile {
+pub enum FWFile {
     UiNu(FileInfo),
     UiStm(FileInfo),
     UiNu2(FileInfo),
@@ -46,7 +45,7 @@ enum FWFile {
 }
 
 impl FWFile {
-    fn to_file_name(&self) -> String {
+    pub fn to_file_name(&self) -> String {
         match self {
             FWFile::UiNu(_) => "ui_nu.bin".into(),
             FWFile::UiStm(_) => "ui_stm.bin".into(),
@@ -71,10 +70,41 @@ impl FWFile {
     }
 }
 
-struct FWMetadata {
-    model: RDModel,
-    format_version: i32,
-    new_merge_file: bool,
+pub fn handle_gpsdb_file_info(file: &FWFile) -> Option<&GpsDbFileInfo> {
+    match file {
+        FWFile::GpsDb(gps_db_file_info) |
+        FWFile::GpsDbSecond(gps_db_file_info) => Some(gps_db_file_info),
+        _ => None,
+    }
+}
+
+pub fn handle_file_info(file: &FWFile) -> Option<&FileInfo> {
+    match file {
+        FWFile::UiNu(file_info) |
+        FWFile::UiStm(file_info) |
+        FWFile::UiNu2(file_info) |
+        FWFile::DspNu(file_info) |
+        FWFile::DspStm(file_info) |
+        FWFile::DspNu2(file_info) |
+        FWFile::DspNu3(file_info) |
+        FWFile::GpsNu(file_info) |
+        FWFile::GpsStm(file_info) |
+        FWFile::GpsNu2(file_info) |
+        FWFile::GpsNu3(file_info) |
+        FWFile::SoundDbnu(file_info) |
+        FWFile::SoundDbla1(file_info) |
+        FWFile::SoundDbla2(file_info) |
+        FWFile::Ble(file_info) |
+        FWFile::Keypad(file_info) |
+        FWFile::LaserIf(file_info) => Some(file_info),
+        _ => None,
+    }
+}
+
+pub struct FWMetadata {
+    pub model: RDModel,
+    pub format_version: i32,
+    pub new_merge_file: bool,
 }
 
 /// (offset, version, end string)
@@ -95,8 +125,8 @@ macro_rules! stfu {
 }
 
 pub struct UnidenFirmware {
-    metadata: Option<FWMetadata>,
-    files: Vec<FWFile>,
+    pub metadata: Option<FWMetadata>,
+    pub(crate) files: Vec<FWFile>,
     buffer: Vec<u8>,
 }
 
@@ -122,7 +152,6 @@ impl UnidenFirmware {
         let mut cursor = Cursor::new(&self.buffer);
 
         let first_element = i32::from_le_bytes(cursor.read_n(4)?.try_into().unwrap());
-        println!("First: {:x}", first_element);
 
         let ui_nu_len = alter_length(first_element & 0xFFFFFF);
         let flag_includes_sound_db = (first_element >> 0x18) & 0x1;
@@ -360,8 +389,8 @@ impl UnidenFirmware {
     }
 
     pub fn extract_to(&self, directory: &str) {
-        for file in self.files {
-            // let content = &self.buffer[]
-        }
+        // for file in self.files {
+        //     // let content = &self.buffer[]
+        // }
     }
 }

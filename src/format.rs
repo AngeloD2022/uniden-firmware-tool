@@ -85,6 +85,35 @@ impl RDModel {
         let model = ((data >> 10) & 0x3F) as u8;
         model.into()
     }
+
+    pub fn to_name(&self) -> &'static str {
+        match self {
+            RDModel::R1 => "R1",
+            RDModel::R3 => "R3",
+            RDModel::R3Nz => "R3NZ",
+            RDModel::R3Nzk => "R3NZK",
+            RDModel::R3Plus => "R3-PLUS",
+            RDModel::R3NzkPlus => "R3NZK-PLUS",
+            RDModel::R7 => "R7",
+            RDModel::R7Nz => "R7NZ",
+            RDModel::R7Il => "R7IL",
+            RDModel::R4 => "R4",
+            RDModel::R4Nz => "R4NZ",
+            RDModel::R4Il => "R4IL",
+            RDModel::R4Eu => "R4EU",
+            RDModel::R8 => "R8",
+            RDModel::R8Nz => "R8NZ",
+            RDModel::R8Il => "R8IL",
+            RDModel::R8Eu => "R8EU",
+            RDModel::R4W => "R4W",
+            RDModel::R8W => "R8W",
+            RDModel::DbEu => "DBEU",
+            RDModel::DbIl => "DBIL",
+            RDModel::DbUs => "DBUS",
+            RDModel::DbNz => "DBNZ",
+            RDModel::Unknown => "UNKNOWN",
+        }
+    }
 }
 
 #[inline(always)]
@@ -124,9 +153,6 @@ pub(crate) fn decode_old_model(key: u8, data: &[u8], offset: usize, length: usiz
         buffer[i + 1] = (buffer[i + 1] as i8 - key as i8) as u8;
         buffer[i + 2] = (buffer[i + 2] as i8 - key as i8) as u8;
         buffer[i + 3] = (buffer[i + 3] as i8 - key as i8) as u8;
-        // buffer[i + 1] -= key;
-        // buffer[i + 2] -= key;
-        // buffer[i + 3] -= key;
     }
 
     buffer
