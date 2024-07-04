@@ -223,7 +223,7 @@ impl UnidenFirmware {
             let current_offset = cursor.position();
 
             match switch.as_ref() {
-                "GPSD" => {
+                "GPSD" | "GASD" => {
                     cursor.seek(current_length as u64 - 12);
                     let arr = cursor.read_n(12)?;
                     let gps_db = stfu!(arr[8..]);
@@ -261,12 +261,32 @@ impl UnidenFirmware {
                             arr[0..4].try_into().unwrap()
                         );
                     } else {
-                        panic!("Malformed GpsDb!");
+                        panic!("Malformed GPS DB File Info!");
                     }
+
                     file.version = i32::from_le_bytes(arr[4..8].try_into().unwrap());
-                    files.push(FWFile::GpsDb(file));
+
+                    let term_string = stfu!(cursor.read_n(7)?);
+                    if (term_string != "DRSWGDB" && switch == "GPSD") ||
+                        (term_string != "DRSWGAE" && switch == "GASD") {
+                        panic!("Error found on termination string.");
+                    }
+
+                    files.push(
+                        match switch.as_ref() {
+                            "GPSD" => FWFile::GpsDb(file),
+                            "GASD" => FWFile::GpsDbSecond(file),
+                            _ => unreachable!()
+                        }
+                    );
                 }
-                _ => {}
+                _ => {
+                    if switch[2..4].to_string() == "SD" {
+                        cursor.seek(current_length as u64 + 9);
+                    } else {
+                        cursor.seek(alter_length(current_length) as u64 + 9);
+                    }
+                }
             }
         }
 
