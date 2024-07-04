@@ -1,22 +1,12 @@
-
+use crate::util::{alter_length, CursorHelper};
+use std::{fs, io};
+use std::io::Cursor;
+use crate::format::{GpsDbCountry, GpsDbType, rd_version, RDModel};
 
 struct FileInfo {
     length: i32,
     offset: i32,
-    version: i32
-}
-
-enum GpsDbType {
-    GpsDbOldEnc,
-    GpsDbAes128,
-    Unknown
-}
-
-enum GpsDbCountry {
-    Us,
-    Nz,
-    Il,
-    Eu
+    version: i32,
 }
 
 struct GpsDbFileInfo {
@@ -24,15 +14,15 @@ struct GpsDbFileInfo {
     offset: i32,
     version: i32,
     file_type: GpsDbType,
-    country: Option<GpsDbCountry>
+    country: Option<GpsDbCountry>,
 }
 
-enum R8FileType {
+enum FWFile {
     UiNu(FileInfo),
     UiStm(FileInfo),
     UiNu2(FileInfo),
     DspNu(FileInfo),
-    DspSTMFNu(FileInfo),
+    DspStmfNu(FileInfo),
     DspNu2(FileInfo),
     DspNu3(FileInfo),
     GpsNu(FileInfo),
@@ -42,37 +32,98 @@ enum R8FileType {
     SoundDbnu(FileInfo),
     SoundDbla1(FileInfo),
     SoundDbla2(FileInfo),
-    GpsDb(FileInfo),
-    GpsDbSecond(FileInfo),
+    GpsDb(GpsDbFileInfo),
+    GpsDbSecond(GpsDbFileInfo),
     Ble(FileInfo),
     Keypad(FileInfo),
-    LaserIf(FileInfo)
+    LaserIf(FileInfo),
 }
 
-#[repr(u8)]
-pub enum ModelName{
-    R1 = 1,
-    R3 = 3,
-    R3Nz = 4,
-    R3Nzk = 5,
-    R3Plus = 64,
-    R3NzkPlus = 65,
-    R7 = 7,
-    R7Nz = 8,
-    R7Il = 9,
-    R4 = 14,
-    R4Nz = 15,
-    R4Il = 16,
-    R4Eu = 17,
-    R8 = 18,
-    R8Nz = 19,
-    R8Il = 20,
-    R8Eu = 21,
-    R4W = 24,
-    R8W = 28,
-    DbEu = 236,
-    DbIl = 237,
-    DbUs = 238,
-    DbNz = 239,
-    UNKNOWN = 255,
+
+struct FWMetadata {
+    model: RDModel,
+    format_version: i16,
+    new_merge_file: bool
+}
+
+pub struct UnidenFirmware {
+    metadata: Option<FWMetadata>,
+    files: Vec<FWFile>,
+    buffer: Vec<u8>,
+}
+
+impl UnidenFirmware {
+    pub fn from(file_path: &str) -> Result<UnidenFirmware, String> {
+        let buffer = fs::read(file_path).map_err(|e| e.to_string())?;
+
+        Ok(
+            Self {
+                metadata: None,
+                files: vec![],
+                buffer
+            }
+        )
+    }
+
+    pub fn read_buffer(&mut self) -> io::Result<()> {
+
+        let mut files = Vec::new();
+        let mut metadata = FWMetadata {
+            model: RDModel::Unknown,
+            format_version: 0,
+            new_merge_file: false,
+        };
+
+        let mut cursor = Cursor::new(&self.buffer);
+
+        let first_element = i32::from_le_bytes(
+            cursor.read_n(4)?.try_into().unwrap()
+        );
+        println!("First: {:x}", first_element);
+
+        let ui_nu_len = alter_length(first_element & 0xFFFFFF00);
+        let flag = (first_element >> 0x18) & 0x1;
+
+        let dsp_nu_len = alter_length(
+            i32::from_le_bytes(cursor.read_n(4)?.try_into().unwrap())
+        );
+        let gps_nu_len = alter_length(
+            i32::from_le_bytes(cursor.read_n(4)?.try_into().unwrap())
+        );
+
+        let mut sound_db_nu_len = 0;
+        if flag == 1 {
+            let slice = &cursor.read_n(12)?[9..];
+            sound_db_nu_len = i32::from_le_bytes(slice.try_into().unwrap());
+        }
+
+        if ui_nu_len != 0 {
+            let ui_nu_offset = cursor.position();
+            cursor.seek(ui_nu_len as u64);
+
+            let arr = cursor.read_n(9)?;
+            let mv_data = i16::from_le_bytes(arr[0..3].try_into().unwrap());
+
+            let model = RDModel::from_data(mv_data);
+            let ui_nu_version = rd_version(mv_data);
+
+            if String::from_utf8(arr[3..].to_vec()).unwrap() != "DRSWMAI" {
+                // todo: replace this
+                panic!("Wrong format.");
+            }
+
+            metadata.model = model;
+            files.push(FWFile::UiNu(FileInfo{
+                length: ui_nu_len,
+                offset: ui_nu_offset as i32,
+                version: ui_nu_version as i32,
+            }));
+        }
+
+        todo!()
+    }
+
+    pub fn extract_to(&self, directory: &str) {
+        todo!()
+    }
 }
