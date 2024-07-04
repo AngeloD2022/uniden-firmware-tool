@@ -1,4 +1,3 @@
-
 pub const SOUND_DB_KEY: u8 = 255;
 pub const OLD_US_GPS_DB_KEY: u8 = 210;
 pub const OLD_NZ_GPS_DB_KEY: u8 = 194;
@@ -7,7 +6,6 @@ pub const OLD_IL_GPS_DB_KEY: u8 = 226;
 pub const OLD_FILE_GPS_DB_IDENTIFY_STR: [&str; 3] = ["LRDB", "DFDB", "IRDB"];
 
 pub const NEW_FILE_GPS_DB_IDENTIFY_STR: [&str; 4] = ["AEUS", "AENZ", "AEIL", "AEEU"];
-
 
 pub enum GpsDbType {
     GpsDbOldEnc,
@@ -91,14 +89,17 @@ impl RDModel {
 
 #[inline(always)]
 pub(crate) fn rd_version(data: i16) -> i16 {
-    if data == -1 {data} else {data & 0x3FF}
+    if data == -1 {
+        data
+    } else {
+        data & 0x3FF
+    }
 }
 
 pub(crate) fn decode_old_model(key: u8, data: &[u8], offset: usize, length: usize) -> Vec<u8> {
     let mut buffer = vec![0u8; length];
 
     for i in (0..length).step_by(4) {
-
         buffer[i] = data[i + offset] & 3;
         buffer[i] += (data[i + 1 + offset] & 3) << 2;
         buffer[i] += (data[i + 2 + offset] & 3) << 4;

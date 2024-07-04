@@ -1,8 +1,12 @@
+use crate::format::{
+    decode_old_model, rd_version, GpsDbCountry, GpsDbType, RDModel, NEW_FILE_GPS_DB_IDENTIFY_STR,
+    OLD_FILE_GPS_DB_IDENTIFY_STR, OLD_IL_GPS_DB_KEY, OLD_NZ_GPS_DB_KEY, OLD_US_GPS_DB_KEY,
+    SOUND_DB_KEY,
+};
 use crate::util::{alter_length, CursorHelper};
-use std::{fs, io};
-use std::io::Cursor;
 use binrw::helpers::count;
-use crate::format::{decode_old_model, GpsDbCountry, GpsDbType, NEW_FILE_GPS_DB_IDENTIFY_STR, OLD_FILE_GPS_DB_IDENTIFY_STR, OLD_IL_GPS_DB_KEY, OLD_NZ_GPS_DB_KEY, OLD_US_GPS_DB_KEY, rd_version, RDModel, SOUND_DB_KEY};
+use std::io::Cursor;
+use std::{fs, io};
 
 struct FileInfo {
     length: i32,
@@ -67,11 +71,10 @@ impl FWFile {
     }
 }
 
-
 struct FWMetadata {
     model: RDModel,
     format_version: i32,
-    new_merge_file: bool
+    new_merge_file: bool,
 }
 
 /// (offset, version, end string)
@@ -82,14 +85,14 @@ fn parse_file_basic(cursor: &mut Cursor<&Vec<u8>>, length: i32) -> io::Result<(i
     let arr = cursor.read_n(9)?;
     let version = rd_version(i16::from_le_bytes(arr[0..2].try_into().unwrap())) as i32;
     let end_string = String::from_utf8(arr[2..].to_vec()).unwrap();
-    return Ok((offset, version, end_string))
+    return Ok((offset, version, end_string));
 }
-
 
 macro_rules! stfu {
-    ($ex:expr) => {String::from_utf8($ex.to_vec()).unwrap()};
+    ($ex:expr) => {
+        String::from_utf8($ex.to_vec()).unwrap()
+    };
 }
-
 
 pub struct UnidenFirmware {
     metadata: Option<FWMetadata>,
@@ -101,17 +104,14 @@ impl UnidenFirmware {
     pub fn from(file_path: &str) -> Result<UnidenFirmware, String> {
         let buffer = fs::read(file_path).map_err(|e| e.to_string())?;
 
-        Ok(
-            Self {
-                metadata: None,
-                files: vec![],
-                buffer
-            }
-        )
+        Ok(Self {
+            metadata: None,
+            files: vec![],
+            buffer,
+        })
     }
 
     pub fn read_buffer(&mut self) -> io::Result<()> {
-
         let mut files = Vec::new();
         let mut metadata = FWMetadata {
             model: RDModel::Unknown,
@@ -121,20 +121,14 @@ impl UnidenFirmware {
 
         let mut cursor = Cursor::new(&self.buffer);
 
-        let first_element = i32::from_le_bytes(
-            cursor.read_n(4)?.try_into().unwrap()
-        );
+        let first_element = i32::from_le_bytes(cursor.read_n(4)?.try_into().unwrap());
         println!("First: {:x}", first_element);
 
         let ui_nu_len = alter_length(first_element & 0xFFFFFF);
         let flag_includes_sound_db = (first_element >> 0x18) & 0x1;
 
-        let dsp_nu_len = alter_length(
-            i32::from_le_bytes(cursor.read_n(4)?.try_into().unwrap())
-        );
-        let gps_nu_len = alter_length(
-            i32::from_le_bytes(cursor.read_n(4)?.try_into().unwrap())
-        );
+        let dsp_nu_len = alter_length(i32::from_le_bytes(cursor.read_n(4)?.try_into().unwrap()));
+        let gps_nu_len = alter_length(i32::from_le_bytes(cursor.read_n(4)?.try_into().unwrap()));
 
         let mut sound_db_nu_len = 0;
         if flag_includes_sound_db == 1 {
@@ -158,7 +152,7 @@ impl UnidenFirmware {
             }
 
             metadata.model = model;
-            files.push(FWFile::UiNu(FileInfo{
+            files.push(FWFile::UiNu(FileInfo {
                 length: ui_nu_len,
                 offset: ui_nu_offset as i32,
                 version: ui_nu_version as i32,
@@ -171,7 +165,7 @@ impl UnidenFirmware {
                 panic!("Wrong format.");
             }
 
-            files.push(FWFile::DspNu(FileInfo{
+            files.push(FWFile::DspNu(FileInfo {
                 length: dsp_nu_len,
                 offset,
                 version,
@@ -184,7 +178,7 @@ impl UnidenFirmware {
                 panic!("Wrong format.");
             }
 
-            files.push(FWFile::GpsNu(FileInfo{
+            files.push(FWFile::GpsNu(FileInfo {
                 length: dsp_nu_len,
                 offset,
                 version,
@@ -205,15 +199,15 @@ impl UnidenFirmware {
                 panic!("Wrong format.");
             }
 
-            files.push(FWFile::SoundDbnu(FileInfo{
+            files.push(FWFile::SoundDbnu(FileInfo {
                 length: sound_db_nu_len,
                 offset,
-                version
+                version,
             }));
         }
 
         if cursor.position() == cursor.get_ref().len() as u64 {
-            return Ok(())
+            return Ok(());
         }
 
         while cursor.position() != cursor.get_ref().len() as u64 {
@@ -227,7 +221,7 @@ impl UnidenFirmware {
                     cursor.seek(current_length as u64 - 12);
                     let arr = cursor.read_n(12)?;
                     let gps_db = stfu!(arr[8..]);
-                    let mut file = GpsDbFileInfo{
+                    let mut file = GpsDbFileInfo {
                         length: current_length,
                         offset: current_offset as i32,
                         version: 0,
@@ -245,7 +239,7 @@ impl UnidenFirmware {
                         };
                         file.country = Some(country);
                         file.poi = i32::from_le_bytes(
-                            decode_old_model(key, &arr, 0, 4).try_into().unwrap()
+                            decode_old_model(key, &arr, 0, 4).try_into().unwrap(),
                         );
                     } else if NEW_FILE_GPS_DB_IDENTIFY_STR.contains(&&**&gps_db) {
                         file.file_type = GpsDbType::GpsDbAes128;
@@ -257,9 +251,7 @@ impl UnidenFirmware {
                             _ => unreachable!(),
                         };
                         file.country = Some(country);
-                        file.poi = i32::from_le_bytes(
-                            arr[0..4].try_into().unwrap()
-                        );
+                        file.poi = i32::from_le_bytes(arr[0..4].try_into().unwrap());
                     } else {
                         panic!("Malformed GPS DB File Info!");
                     }
@@ -271,21 +263,21 @@ impl UnidenFirmware {
                     }
 
                     let term_string = stfu!(cursor.read_n(7)?);
-                    if (term_string != "DRSWGDB" && switch == "GPSD") ||
-                        (term_string != "DRSWGAE" && switch == "GASD") {
+                    if (term_string != "DRSWGDB" && switch == "GPSD")
+                        || (term_string != "DRSWGAE" && switch == "GASD")
+                    {
                         panic!("Error found on termination string.");
                     }
 
-                    files.push(
-                        match switch.as_ref() {
-                            "GPSD" => FWFile::GpsDb(file),
-                            "GASD" => FWFile::GpsDbSecond(file),
-                            _ => unreachable!()
-                        }
-                    );
+                    files.push(match switch.as_ref() {
+                        "GPSD" => FWFile::GpsDb(file),
+                        "GASD" => FWFile::GpsDbSecond(file),
+                        _ => unreachable!(),
+                    });
                 }
-                "BLES" | "KEYS" | "LSRS" | "STUI" | "STDS" | "STGP" | "N2UI" | "N2DS" | "N3DS" | "N2GP" | "N3GP" => {
-                    let length_modifier = if switch == "BLES" {1024} else {512};
+                "BLES" | "KEYS" | "LSRS" | "STUI" | "STDS" | "STGP" | "N2UI" | "N2DS" | "N3DS"
+                | "N2GP" | "N3GP" => {
+                    let length_modifier = if switch == "BLES" { 1024 } else { 512 };
                     let length = (current_length / length_modifier + 1) * length_modifier;
                     let expected_termstr = format!("DRSW{}", switch[0..3].to_string());
 
@@ -322,9 +314,7 @@ impl UnidenFirmware {
 
                     let arr = cursor.read_n(12)?;
                     let vbuf = decode_old_model(SOUND_DB_KEY, &arr, 0, 4);
-                    let version = rd_version(
-                        i32::from_le_bytes(vbuf.try_into().unwrap()) as i16
-                    );
+                    let version = rd_version(i32::from_le_bytes(vbuf.try_into().unwrap()) as i16);
 
                     if switch == "SUSD" {
                         cursor.seek(2);
@@ -344,7 +334,7 @@ impl UnidenFirmware {
                     files.push(match switch.as_ref() {
                         "STSD" => FWFile::SoundDbla1(file),
                         "SUSD" => FWFile::SoundDbla2(file),
-                        _ => unreachable!()
+                        _ => unreachable!(),
                     });
                 }
                 "NMGF" => {
@@ -363,15 +353,15 @@ impl UnidenFirmware {
             }
         }
 
-        todo!()
+        self.files = files;
+        self.metadata = Some(metadata);
+
+        Ok(())
     }
 
     pub fn extract_to(&self, directory: &str) {
-        // for file in self.files {
-        //     // let content = &self.buffer[]
-        // }
+        for file in self.files {
+            // let content = &self.buffer[]
+        }
     }
 }
-
-
-
