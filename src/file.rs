@@ -1,7 +1,7 @@
 use crate::util::{alter_length, CursorHelper};
 use std::{fs, io};
 use std::io::Cursor;
-use crate::format::{GpsDbCountry, GpsDbType, rd_version, RDModel};
+use crate::format::{decode_old_model, GpsDbCountry, GpsDbType, rd_version, RDModel, SOUND_DB_KEY};
 
 struct FileInfo {
     length: i32,
@@ -158,9 +158,26 @@ impl UnidenFirmware {
             }));
         }
 
-        // if sound_db_nu_len != 0 {
-        //
-        // }
+        if sound_db_nu_len != 0 {
+            let offset = cursor.position() as i32;
+            cursor.seek(sound_db_nu_len as u64 - 12);
+
+            let arr = cursor.read_n(12)?;
+            let vbuf = decode_old_model(SOUND_DB_KEY, &arr, 0, 4);
+
+            let version = rd_version(i32::from_le_bytes(vbuf.try_into().unwrap()) as i16) as i32;
+
+            let arr = cursor.read_n(7)?;
+            if String::from_utf8(arr).unwrap() != "DRSWSDB" {
+                panic!("Wrong format.");
+            }
+
+            files.push(FWFile::SoundDbnu(FileInfo{
+                length: sound_db_nu_len,
+                offset,
+                version
+            }));
+        }
 
         todo!()
     }

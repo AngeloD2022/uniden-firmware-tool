@@ -1,3 +1,10 @@
+
+pub const SOUND_DB_KEY: u8 = 255;
+pub const OLD_US_GPS_DB_KEY: u8 = 210;
+pub const OLD_NZ_GPS_DB_KEY: u8 = 194;
+pub const OLD_IL_GPS_DB_KEY: u8 = 226;
+
+
 pub enum GpsDbType {
     GpsDbOldEnc,
     GpsDbAes128,
@@ -78,11 +85,41 @@ impl RDModel {
     }
 }
 
-
 #[inline(always)]
 pub(crate) fn rd_version(data: i16) -> i16 {
     if data == -1 {data} else {data & 0x3FF}
 }
 
+pub(crate) fn decode_old_model(key: u8, data: &[u8], offset: usize, length: usize) -> Vec<u8> {
+    let mut buffer = vec![0u8; length];
 
+    for i in (0..length).step_by(4) {
 
+        buffer[i] = data[i + offset] & 3;
+        buffer[i] += (data[i + 1 + offset] & 3) << 2;
+        buffer[i] += (data[i + 2 + offset] & 3) << 4;
+        buffer[i] += (data[i + 3 + offset] & 3) << 6;
+
+        buffer[i + 1] = (data[i + offset] & 0xC) >> 2;
+        buffer[i + 1] += data[i + 1 + offset] & 0xC;
+        buffer[i + 1] += (data[i + 2 + offset] & 0xC) << 2;
+        buffer[i + 1] += (data[i + 3 + offset] & 0xC) << 4;
+
+        buffer[i + 2] = (data[i + offset] & 0x30) >> 4;
+        buffer[i + 2] += (data[i + 1 + offset] & 0x30) >> 2;
+        buffer[i + 2] += data[i + 2 + offset] & 0x30;
+        buffer[i + 2] += (data[i + 3 + offset] & 0x30) << 2;
+
+        buffer[i + 3] = (data[i + offset] & 0xC0) >> 6;
+        buffer[i + 3] += (data[i + 1 + offset] & 0xC0) >> 4;
+        buffer[i + 3] += (data[i + 2 + offset] & 0xC0) >> 2;
+        buffer[i + 3] += data[i + 3 + offset] & 0xC0;
+
+        buffer[i] -= key;
+        buffer[i + 1] -= key;
+        buffer[i + 2] -= key;
+        buffer[i + 3] -= key;
+    }
+
+    buffer
+}
