@@ -4,6 +4,10 @@ pub const OLD_US_GPS_DB_KEY: u8 = 210;
 pub const OLD_NZ_GPS_DB_KEY: u8 = 194;
 pub const OLD_IL_GPS_DB_KEY: u8 = 226;
 
+pub const OLD_FILE_GPS_DB_IDENTIFY_STR: [&str; 3] = ["LRDB", "DFDB", "IRDB"];
+
+pub const NEW_FILE_GPS_DB_IDENTIFY_STR: [&str; 4] = ["AEUS", "AENZ", "AEIL", "AEEU"];
+
 
 pub enum GpsDbType {
     GpsDbOldEnc,

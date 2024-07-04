@@ -1,7 +1,8 @@
 use crate::util::{alter_length, CursorHelper};
 use std::{fs, io};
 use std::io::Cursor;
-use crate::format::{decode_old_model, GpsDbCountry, GpsDbType, rd_version, RDModel, SOUND_DB_KEY};
+use binrw::helpers::count;
+use crate::format::{decode_old_model, GpsDbCountry, GpsDbType, NEW_FILE_GPS_DB_IDENTIFY_STR, OLD_FILE_GPS_DB_IDENTIFY_STR, OLD_IL_GPS_DB_KEY, OLD_NZ_GPS_DB_KEY, OLD_US_GPS_DB_KEY, rd_version, RDModel, SOUND_DB_KEY};
 
 struct FileInfo {
     length: i32,
@@ -13,6 +14,7 @@ struct GpsDbFileInfo {
     length: i32,
     offset: i32,
     version: i32,
+    poi: i32,
     file_type: GpsDbType,
     country: Option<GpsDbCountry>,
 }
@@ -39,6 +41,32 @@ enum FWFile {
     LaserIf(FileInfo),
 }
 
+impl FWFile {
+    fn to_file_name(&self) -> String {
+        match self {
+            FWFile::UiNu(_) => "ui_nu.bin".into(),
+            FWFile::UiStm(_) => "ui_stm.bin".into(),
+            FWFile::UiNu2(_) => "ui_nu2.bin".into(),
+            FWFile::DspNu(_) => "dsp_nu.bin".into(),
+            FWFile::DspStmfNu(_) => "dsp_stmf_nu.bin".into(),
+            FWFile::DspNu2(_) => "dsp_nu2.bin".into(),
+            FWFile::DspNu3(_) => "dsp_nu3.bin".into(),
+            FWFile::GpsNu(_) => "gps_nu.bin".into(),
+            FWFile::GpsStmf(_) => "gps_stmf.bin".into(),
+            FWFile::GpsNu2(_) => "gps_nu2.bin".into(),
+            FWFile::GpsNu3(_) => "gps_nu3.bin".into(),
+            FWFile::SoundDbnu(_) => "sound_dbnu.bin".into(),
+            FWFile::SoundDbla1(_) => "sound_dbla1.bin".into(),
+            FWFile::SoundDbla2(_) => "sound_dbla2.bin".into(),
+            FWFile::GpsDb(_) => "gps_db.bin".into(),
+            FWFile::GpsDbSecond(_) => "gps_db_second.bin".into(),
+            FWFile::Ble(_) => "ble.bin".into(),
+            FWFile::Keypad(_) => "keypad.bin".into(),
+            FWFile::LaserIf(_) => "laser_if.bin".into(),
+        }
+    }
+}
+
 
 struct FWMetadata {
     model: RDModel,
@@ -55,6 +83,11 @@ fn parse_file_basic(cursor: &mut Cursor<&Vec<u8>>, length: i32) -> io::Result<(i
     let version = rd_version(i16::from_le_bytes(arr[0..2].try_into().unwrap())) as i32;
     let end_string = String::from_utf8(arr[2..].to_vec()).unwrap();
     return Ok((offset, version, end_string))
+}
+
+
+macro_rules! stfu {
+    ($ex:expr) => {String::from_utf8($ex.to_vec()).unwrap()};
 }
 
 
@@ -179,11 +212,70 @@ impl UnidenFirmware {
             }));
         }
 
+        if cursor.position() == cursor.get_ref().len() as u64 {
+            return Ok(())
+        }
+
+        while cursor.position() != cursor.get_ref().len() as u64 {
+            let arr = cursor.read_n(12)?;
+            let switch = String::from_utf8(arr[0..5].to_vec()).unwrap();
+            let current_length = i32::from_le_bytes(arr[8..].try_into().unwrap());
+            let current_offset = cursor.position();
+
+            match switch.as_ref() {
+                "GPSD" => {
+                    cursor.seek(current_length as u64 - 12);
+                    let arr = cursor.read_n(12);
+                    let gps_db = stfu!(arr[8..]);
+                    let mut file = GpsDbFileInfo{
+                        length: current_length,
+                        offset: current_offset,
+                        version: 0,
+                        poi: 0,
+                        file_type: GpsDbType::Unknown,
+                        country: None,
+                    };
+                    if OLD_FILE_GPS_DB_IDENTIFY_STR.contains(&gps_db) {
+                        file.file_type = GpsDbType::GpsDbOldEnc;
+                        let (key, country) = match gps_db.as_ref() {
+                            "LRDB" => (OLD_US_GPS_DB_KEY, GpsDbCountry::Us),
+                            "DFDB" => (OLD_NZ_GPS_DB_KEY, GpsDbCountry::Nz),
+                            "IRDB" => (OLD_IL_GPS_DB_KEY, GpsDbCountry::Il),
+                            _ => panic!("malformed gps db."),
+                        };
+                        file.country = country;
+                        file.poi = i32::from_le_bytes(
+                            decode_old_model(key, &arr, 0, 4).try_into().unwrap()
+                        );
+                    } else if NEW_FILE_GPS_DB_IDENTIFY_STR.contains(&gps_db) {
+                        file.file_type = GpsDbType::GpsDbAes128;
+                        file.country = match gps_db.as_ref() {
+                            "AEUS" => GpsDbCountry::Us,
+                            "AENZ" => GpsDbCountry::Nz,
+                            "AEIL" => GpsDbCountry::Il,
+                            "AEEU" => GpsDbCountry::Eu,
+                            _ => panic!("malformed gps db."),
+                        };
+                        file.poi = i32::from_le_bytes(
+                            arr[0..5].try_into().unwrap()
+                        );
+                    } else {
+                        panic!("Malformed GpsDb!");
+                    }
+                    file.version = i32::from_le_bytes(arr[4..9].try_into().unwrap());
+                    files.push(FWFile::GpsDb(file));
+                }
+                _ => {}
+            }
+        }
+
         todo!()
     }
 
     pub fn extract_to(&self, directory: &str) {
-        todo!()
+        for file in self.files {
+            let content = &self.buffer[]
+        }
     }
 }
 
