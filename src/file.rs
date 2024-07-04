@@ -218,51 +218,52 @@ impl UnidenFirmware {
 
         while cursor.position() != cursor.get_ref().len() as u64 {
             let arr = cursor.read_n(12)?;
-            let switch = String::from_utf8(arr[0..5].to_vec()).unwrap();
+            let switch = String::from_utf8(arr[0..4].to_vec()).unwrap();
             let current_length = i32::from_le_bytes(arr[8..].try_into().unwrap());
             let current_offset = cursor.position();
 
             match switch.as_ref() {
                 "GPSD" => {
                     cursor.seek(current_length as u64 - 12);
-                    let arr = cursor.read_n(12);
+                    let arr = cursor.read_n(12)?;
                     let gps_db = stfu!(arr[8..]);
                     let mut file = GpsDbFileInfo{
                         length: current_length,
-                        offset: current_offset,
+                        offset: current_offset as i32,
                         version: 0,
                         poi: 0,
                         file_type: GpsDbType::Unknown,
                         country: None,
                     };
-                    if OLD_FILE_GPS_DB_IDENTIFY_STR.contains(&gps_db) {
+                    if OLD_FILE_GPS_DB_IDENTIFY_STR.contains(&&**&gps_db) {
                         file.file_type = GpsDbType::GpsDbOldEnc;
                         let (key, country) = match gps_db.as_ref() {
                             "LRDB" => (OLD_US_GPS_DB_KEY, GpsDbCountry::Us),
                             "DFDB" => (OLD_NZ_GPS_DB_KEY, GpsDbCountry::Nz),
                             "IRDB" => (OLD_IL_GPS_DB_KEY, GpsDbCountry::Il),
-                            _ => panic!("malformed gps db."),
+                            _ => unreachable!(),
                         };
-                        file.country = country;
+                        file.country = Some(country);
                         file.poi = i32::from_le_bytes(
                             decode_old_model(key, &arr, 0, 4).try_into().unwrap()
                         );
-                    } else if NEW_FILE_GPS_DB_IDENTIFY_STR.contains(&gps_db) {
+                    } else if NEW_FILE_GPS_DB_IDENTIFY_STR.contains(&&**&gps_db) {
                         file.file_type = GpsDbType::GpsDbAes128;
-                        file.country = match gps_db.as_ref() {
+                        let country = match gps_db.as_ref() {
                             "AEUS" => GpsDbCountry::Us,
                             "AENZ" => GpsDbCountry::Nz,
                             "AEIL" => GpsDbCountry::Il,
                             "AEEU" => GpsDbCountry::Eu,
-                            _ => panic!("malformed gps db."),
+                            _ => unreachable!(),
                         };
+                        file.country = Some(country);
                         file.poi = i32::from_le_bytes(
-                            arr[0..5].try_into().unwrap()
+                            arr[0..4].try_into().unwrap()
                         );
                     } else {
                         panic!("Malformed GpsDb!");
                     }
-                    file.version = i32::from_le_bytes(arr[4..9].try_into().unwrap());
+                    file.version = i32::from_le_bytes(arr[4..8].try_into().unwrap());
                     files.push(FWFile::GpsDb(file));
                 }
                 _ => {}
@@ -273,9 +274,9 @@ impl UnidenFirmware {
     }
 
     pub fn extract_to(&self, directory: &str) {
-        for file in self.files {
-            let content = &self.buffer[]
-        }
+        // for file in self.files {
+        //     // let content = &self.buffer[]
+        // }
     }
 }
 
