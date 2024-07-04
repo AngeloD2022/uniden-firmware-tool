@@ -46,9 +46,15 @@ struct FWMetadata {
     new_merge_file: bool
 }
 
+/// (offset, version, end string)
+fn parse_file_basic(cursor: &mut Cursor<&Vec<u8>>, length: i32) -> io::Result<(i32, i32, String)> {
+    let offset = cursor.position() as i32;
+    cursor.seek(length as u64);
 
-fn parse_basic_file(cursor: &mut Cursor<&Vec<u8>>, ) {
-
+    let arr = cursor.read_n(9)?;
+    let version = rd_version(i16::from_le_bytes(arr[0..2].try_into().unwrap())) as i32;
+    let end_string = String::from_utf8(arr[2..].to_vec()).unwrap();
+    return Ok((offset, version, end_string))
 }
 
 
@@ -114,7 +120,7 @@ impl UnidenFirmware {
             let ui_nu_version = rd_version(mv_data);
 
             if String::from_utf8(arr[2..].to_vec()).unwrap() != "DRSWMAI" {
-                // todo: replace this
+                // todo: replace these panics with a custom error
                 panic!("Wrong format.");
             }
 
@@ -126,7 +132,35 @@ impl UnidenFirmware {
             }));
         }
 
+        if dsp_nu_len != 0 {
+            let (offset, version, endstr) = parse_file_basic(&mut cursor, dsp_nu_len)?;
+            if endstr != "DRSWDSP" {
+                panic!("Wrong format.");
+            }
 
+            files.push(FWFile::DspNu(FileInfo{
+                length: dsp_nu_len,
+                offset,
+                version,
+            }));
+        }
+
+        if gps_nu_len != 0 {
+            let (offset, version, endstr) = parse_file_basic(&mut cursor, gps_nu_len)?;
+            if endstr != "DRSWSUB" {
+                panic!("Wrong format.");
+            }
+
+            files.push(FWFile::GpsNu(FileInfo{
+                length: dsp_nu_len,
+                offset,
+                version,
+            }));
+        }
+
+        // if sound_db_nu_len != 0 {
+        //
+        // }
 
         todo!()
     }

@@ -74,18 +74,12 @@ impl RDModel {
     pub(crate) fn from_data(data: i16) -> Self {
         // mask the upper six bits from `data`
         let model = ((data >> 10) & 0x3F) as u8;
-
-        // if let Ok(result) = Self::try_from(model) {
-        //     result
-        // } else {
-        //     Self::Unknown
-        // }
-
         model.into()
     }
 }
 
 
+#[inline(always)]
 pub(crate) fn rd_version(data: i16) -> i16 {
     if data == -1 {data} else {data & 0x3FF}
 }
