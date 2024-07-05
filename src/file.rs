@@ -3,10 +3,13 @@ use crate::format::{
     OLD_FILE_GPS_DB_IDENTIFY_STR, OLD_IL_GPS_DB_KEY, OLD_NZ_GPS_DB_KEY, OLD_US_GPS_DB_KEY,
     SOUND_DB_KEY,
 };
-use crate::util::{alter_length, CursorHelper};
-use std::io::{Cursor, Write};
+use crate::util::{alter_length, CursorHelper, TrackingCursor};
+use rust_lapper::{Interval, Lapper};
+use std::io::Write;
 use std::path::PathBuf;
 use std::{fs, io, path};
+
+type Iv = Interval<u64, ()>;
 
 #[derive(Clone, Copy)]
 struct FileInfoBase {
@@ -121,7 +124,7 @@ pub struct FWMetadata {
 }
 
 /// (offset, version, end string)
-fn parse_file_basic(cursor: &mut Cursor<&Vec<u8>>, length: i32) -> io::Result<(i32, i32, String)> {
+fn parse_file_basic(cursor: &mut TrackingCursor, length: i32) -> io::Result<(i32, i32, String)> {
     let offset = cursor.position() as i32;
     cursor.seek(length as u64);
 
@@ -137,20 +140,31 @@ macro_rules! stfu {
     };
 }
 
-pub struct UnidenFirmware {
+pub struct UnidenFirmware<'a> {
     pub metadata: Option<FWMetadata>,
     pub(crate) files: Vec<FWFile>,
+    pub intervals: Lapper<u64, ()>,
+    pub unread_intervals: Lapper<u64, ()>,
+    pub size: u64,
     buffer: Vec<u8>,
+    cursor: TrackingCursor<'a>,
 }
 
-impl UnidenFirmware {
-    pub fn from(file_path: &PathBuf) -> Result<UnidenFirmware, String> {
-        let buffer = fs::read(file_path).map_err(|e| e.to_string())?;
-
+impl<'a> UnidenFirmware<'a> {
+    pub fn from(file_path: &'a PathBuf) -> Result<UnidenFirmware<'a>, String> {
+        let buffer: Vec<u8> = fs::read(file_path).map_err(|e| e.to_string())?;
         Ok(Self {
             metadata: None,
             files: vec![],
-            buffer,
+            intervals: Lapper::new(Vec::new().into()),
+            unread_intervals: Lapper::new(vec![Iv {
+                start: 0,
+                stop: buffer.len() as u64,
+                val: (),
+            }]),
+            size: buffer.len() as u64,
+            cursor: TrackingCursor::new(&buffer),
+            buffer: buffer,
         })
     }
 
@@ -162,27 +176,29 @@ impl UnidenFirmware {
             new_merge_file: false,
         };
 
-        let mut cursor = Cursor::new(&self.buffer);
-
-        let first_element = i32::from_le_bytes(cursor.read_n(4)?.try_into().unwrap());
+        let first_element = i32::from_le_bytes(self.cursor.read_n(4)?.try_into().unwrap());
 
         let ui_nu_len = alter_length(first_element & 0xFFFFFF);
         let flag_includes_sound_db = (first_element >> 0x18) & 0x1;
 
-        let dsp_nu_len = alter_length(i32::from_le_bytes(cursor.read_n(4)?.try_into().unwrap()));
-        let gps_nu_len = alter_length(i32::from_le_bytes(cursor.read_n(4)?.try_into().unwrap()));
+        let dsp_nu_len = alter_length(i32::from_le_bytes(
+            self.cursor.read_n(4)?.try_into().unwrap(),
+        ));
+        let gps_nu_len = alter_length(i32::from_le_bytes(
+            self.cursor.read_n(4)?.try_into().unwrap(),
+        ));
 
         let mut sound_db_nu_len = 0;
         if flag_includes_sound_db == 1 {
-            let slice = &cursor.read_n(12)?[8..];
+            let slice = &self.cursor.read_n(12)?[8..];
             sound_db_nu_len = i32::from_le_bytes(slice.try_into().unwrap());
         }
 
         if ui_nu_len != 0 {
-            let ui_nu_offset = cursor.position();
-            cursor.seek(ui_nu_len as u64);
+            let ui_nu_offset = self.cursor.position();
+            self.cursor.seek(ui_nu_len as u64);
 
-            let arr = cursor.read_n(9)?;
+            let arr = self.cursor.read_n(9)?;
             let mv_data = i16::from_le_bytes(arr[0..2].try_into().unwrap());
 
             let model = RDModel::from_data(mv_data);
@@ -206,7 +222,7 @@ impl UnidenFirmware {
         }
 
         if dsp_nu_len != 0 {
-            let (offset, version, endstr) = parse_file_basic(&mut cursor, dsp_nu_len)?;
+            let (offset, version, endstr) = parse_file_basic(&mut self.cursor, dsp_nu_len)?;
             if endstr != "DRSWDSP" {
                 panic!("Wrong format.");
             }
@@ -223,7 +239,7 @@ impl UnidenFirmware {
         }
 
         if gps_nu_len != 0 {
-            let (offset, version, endstr) = parse_file_basic(&mut cursor, gps_nu_len)?;
+            let (offset, version, endstr) = parse_file_basic(&mut self.cursor, gps_nu_len)?;
             if endstr != "DRSWSUB" {
                 panic!("Wrong format.");
             }
@@ -240,15 +256,15 @@ impl UnidenFirmware {
         }
 
         if sound_db_nu_len != 0 {
-            let offset = cursor.position() as i32;
-            cursor.seek(sound_db_nu_len as u64 - 12);
+            let offset = self.cursor.position() as i32;
+            self.cursor.seek(sound_db_nu_len as u64 - 12);
 
-            let arr = cursor.read_n(12)?;
+            let arr = self.cursor.read_n(12)?;
             let vbuf = decode_old_model(SOUND_DB_KEY, &arr, 0, 4);
 
             let version = rd_version(i32::from_le_bytes(vbuf.try_into().unwrap()) as i16) as i32;
 
-            let arr = cursor.read_n(7)?;
+            let arr = self.cursor.read_n(7)?;
             if String::from_utf8(arr).unwrap() != "DRSWSDB" {
                 panic!("Wrong format.");
             }
@@ -264,20 +280,20 @@ impl UnidenFirmware {
             });
         }
 
-        if cursor.position() == cursor.get_ref().len() as u64 {
+        if self.cursor.position() == self.size {
             return Ok(());
         }
 
-        while cursor.position() != cursor.get_ref().len() as u64 {
-            let arr = cursor.read_n(12)?;
+        while self.cursor.position() != self.size {
+            let arr = self.cursor.read_n(12)?;
             let switch = String::from_utf8(arr[0..4].to_vec()).unwrap();
             let current_length = i32::from_le_bytes(arr[8..].try_into().unwrap());
-            let current_offset = cursor.position();
+            let current_offset = self.cursor.position();
 
             match switch.as_ref() {
                 "GPSD" | "GASD" => {
-                    cursor.seek(current_length as u64 - 12);
-                    let arr = cursor.read_n(12)?;
+                    self.cursor.seek(current_length as u64 - 12);
+                    let arr = self.cursor.read_n(12)?;
                     let gps_db = stfu!(arr[8..]);
                     let mut file = GpsDbFileInfo {
                         info: FileInfoBase {
@@ -319,10 +335,10 @@ impl UnidenFirmware {
                     file.info.version = i32::from_le_bytes(arr[4..8].try_into().unwrap());
 
                     if switch == "GASD" {
-                        cursor.seek(2);
+                        self.cursor.seek(2);
                     }
 
-                    let term_string = stfu!(cursor.read_n(7)?);
+                    let term_string = stfu!(self.cursor.read_n(7)?);
                     if (term_string != "DRSWGDB" && switch == "GPSD")
                         || (term_string != "DRSWGAE" && switch == "GASD")
                     {
@@ -347,7 +363,7 @@ impl UnidenFirmware {
                     let length = (current_length / length_modifier + 1) * length_modifier;
                     let expected_termstr = format!("DRSW{}", &switch[0..3]);
 
-                    let (offset, version, term_str) = parse_file_basic(&mut cursor, length)?;
+                    let (offset, version, term_str) = parse_file_basic(&mut self.cursor, length)?;
 
                     if expected_termstr != term_str {
                         panic!("Wrong termination sequence: {}", switch)
@@ -409,17 +425,17 @@ impl UnidenFirmware {
                 }
                 "STSD" | "SUSD" => {
                     let expected_termstr = format!("DRSW{}", &switch[0..3]);
-                    cursor.seek(current_length as u64 - 12);
+                    self.cursor.seek(current_length as u64 - 12);
 
-                    let arr = cursor.read_n(12)?;
+                    let arr = self.cursor.read_n(12)?;
                     let vbuf = decode_old_model(SOUND_DB_KEY, &arr, 0, 4);
                     let version = rd_version(i32::from_le_bytes(vbuf.try_into().unwrap()) as i16);
 
                     if switch == "SUSD" {
-                        cursor.seek(2);
+                        self.cursor.seek(2);
                     }
 
-                    let termstr = stfu!(cursor.read_n(7)?);
+                    let termstr = stfu!(self.cursor.read_n(7)?);
                     if expected_termstr != termstr {
                         panic!("Wrong termination sequence: {}", switch)
                     }
@@ -443,16 +459,16 @@ impl UnidenFirmware {
                     });
                 }
                 "NMGF" => {
-                    if cursor.position() == cursor.get_ref().len() as u64 {
+                    if self.cursor.position() == self.size {
                         metadata.new_merge_file = true;
                         metadata.format_version = i32::from_le_bytes(arr[8..12].try_into().unwrap())
                     }
                 }
                 _ => {
                     if switch[2..4].to_string() == "SD" {
-                        cursor.seek(current_length as u64 + 9);
+                        self.cursor.seek(current_length as u64 + 9);
                     } else {
-                        cursor.seek(alter_length(current_length) as u64 + 9);
+                        self.cursor.seek(alter_length(current_length) as u64 + 9);
                     }
                 }
             }
@@ -460,29 +476,94 @@ impl UnidenFirmware {
 
         self.files = files;
         self.metadata = Some(metadata);
+        self.intervals = self.cursor.intervals();
+        self.unread_intervals = Lapper::new(Vec::new().into());
+        let mut pos_cur = 0u64;
+        for iv in &self.intervals {
+            if iv.start > pos_cur {
+                self.unread_intervals.insert(Iv {
+                    start: pos_cur,
+                    stop: iv.start - 1,
+                    val: (),
+                });
+            }
+            pos_cur = iv.stop;
+        }
+        if pos_cur < self.buffer.len() as u64 {
+            self.unread_intervals.insert(Iv {
+                start: pos_cur,
+                stop: self.buffer.len() as u64,
+                val: (),
+            });
+        }
+        self.unread_intervals.merge_overlaps();
+        self.unread_intervals.set_cov();
 
         Ok(())
     }
 
-    pub fn extract_to(&self, directory: &path::Path) {
+    pub fn extract_to(&mut self, directory: &path::Path) {
         for file in &self.files {
-            // let content = &self.buffer[]
             let mut fpath = path::PathBuf::from(directory);
             fpath.push(file.kind.to_file_name());
             let mut f = fs::File::create(&fpath)
                 .unwrap_or_else(|_| panic!("Couldn't create output file: {}", fpath.display()));
             if let FileInfo::Base(fib) = file.info {
+                self.cursor.seek_set(fib.offset as u64);
                 f.write_all(
-                    &self.buffer[fib.offset as usize..fib.offset as usize + fib.length as usize],
+                    self.cursor
+                        .read_n(fib.length as usize)
+                        .unwrap_or_else(|_| {
+                            panic!("Couldn't read firmware inner file: {}", fpath.display())
+                        })
+                        .as_ref(),
                 )
                 .unwrap_or_else(|_| panic!("Couldn't write output file: {}", fpath.display()));
-            } else if let FileInfo::GpsDb(figps) = file.info {
+            } else if let FileInfo::GpsDb(fibgps) = file.info {
+                self.cursor.seek_set(fibgps.info.offset as u64);
                 f.write_all(
-                    &self.buffer[figps.info.offset as usize
-                        ..figps.info.offset as usize + figps.info.length as usize],
+                    self.cursor
+                        .read_n(fibgps.info.length as usize)
+                        .unwrap_or_else(|_| {
+                            panic!("Couldn't read firmware inner file: {}", fpath.display())
+                        })
+                        .as_ref(),
                 )
                 .unwrap_or_else(|_| panic!("Couldn't write output file: {}", fpath.display()));
             }
+        }
+    }
+
+    pub fn print_intervals(&self) {
+        println!(
+            "Firmware binary [{:#010x}, {:#010x}) read intervals (count: {}):",
+            0,
+            self.size,
+            self.intervals.count(0, u64::max_value())
+        );
+        for iv in &self.intervals {
+            println!(
+                "[{:#010x} -> {:#010x}) {:#x} ({}) bytes",
+                iv.start,
+                iv.stop,
+                iv.stop - iv.start,
+                iv.stop - iv.start
+            );
+        }
+        println!(
+            "Firmware binary [{:#010x}, {:#010x}) unread intervals (count: {}):",
+            0,
+            self.size,
+            self.unread_intervals.count(0, u64::max_value())
+        );
+        for iv in &self.unread_intervals {
+            println!(
+                "[{:#010x} -> {:#010x}) {:#x} ({}) bytes",
+                iv.start,
+                iv.stop,
+                iv.stop - iv.start,
+                iv.stop - iv.start
+            );
         }
     }
 }
