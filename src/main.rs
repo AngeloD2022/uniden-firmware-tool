@@ -31,16 +31,16 @@ fn main() {
             .unwrap_or_else(|_| panic!("Couldn't create output directory: {}", dir.display()))
     }
 
-    let metadata = firmware.metadata.unwrap();
+    let metadata = firmware.metadata.as_ref().unwrap();
 
     println!("Firmware bundle version: {}", metadata.format_version);
     println!("Model: Uniden {}", metadata.model.to_name());
     println!("Embedded files: ");
-    for file in firmware.files {
-        let name = file.to_file_name();
+    for file in &firmware.files {
+        let name = file.kind.to_file_name();
         println!("   - {}", name);
-        if let Some(ref mut dir) = args.out_dir.as_ref().cloned() {
-            dir.push(name);
-        }
+    }
+    if let Some(out_dir) = args.out_dir.as_ref().cloned() {
+        firmware.extract_to(out_dir.as_path())
     }
 }

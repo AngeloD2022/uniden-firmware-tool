@@ -4,26 +4,34 @@ use crate::format::{
     SOUND_DB_KEY,
 };
 use crate::util::{alter_length, CursorHelper};
-use std::io::Cursor;
+use std::any::Any;
+use std::io::{Cursor, Write};
+use std::ops::Deref;
 use std::path::PathBuf;
-use std::{fs, io};
+use std::{fs, io, path};
 
-struct FileInfo {
+#[derive(Clone, Copy)]
+struct FileInfoBase {
     length: i32,
     offset: i32,
     version: i32,
 }
 
+#[derive(Clone, Copy)]
 struct GpsDbFileInfo {
-    length: i32,
-    offset: i32,
-    version: i32,
+    info: FileInfoBase,
     poi: i32,
     file_type: GpsDbType,
     country: Option<GpsDbCountry>,
 }
 
-pub enum FWFile {
+#[derive(Clone, Copy)]
+pub enum FileInfo {
+    Base(FileInfoBase),
+    GpsDb(GpsDbFileInfo),
+}
+
+pub enum FWFileKind {
     UiNu(FileInfo),
     UiStm(FileInfo),
     UiNu2(FileInfo),
@@ -45,60 +53,65 @@ pub enum FWFile {
     LaserIf(FileInfo),
 }
 
-impl FWFile {
+impl FWFileKind {
     pub fn to_file_name(&self) -> String {
         match self {
-            FWFile::UiNu(_) => "ui_nu.bin".into(),
-            FWFile::UiStm(_) => "ui_stm.bin".into(),
-            FWFile::UiNu2(_) => "ui_nu2.bin".into(),
-            FWFile::DspNu(_) => "dsp_nu.bin".into(),
-            FWFile::DspStm(_) => "dsp_stm.bin".into(),
-            FWFile::DspNu2(_) => "dsp_nu2.bin".into(),
-            FWFile::DspNu3(_) => "dsp_nu3.bin".into(),
-            FWFile::GpsNu(_) => "gps_nu.bin".into(),
-            FWFile::GpsStm(_) => "gps_stm.bin".into(),
-            FWFile::GpsNu2(_) => "gps_nu2.bin".into(),
-            FWFile::GpsNu3(_) => "gps_nu3.bin".into(),
-            FWFile::SoundDbnu(_) => "sound_dbnu.bin".into(),
-            FWFile::SoundDbla1(_) => "sound_dbla1.bin".into(),
-            FWFile::SoundDbla2(_) => "sound_dbla2.bin".into(),
-            FWFile::GpsDb(_) => "gps_db.bin".into(),
-            FWFile::GpsDbSecond(_) => "gps_db_second.bin".into(),
-            FWFile::Ble(_) => "ble.bin".into(),
-            FWFile::Keypad(_) => "keypad.bin".into(),
-            FWFile::LaserIf(_) => "laser_if.bin".into(),
+            FWFileKind::UiNu(_) => "ui_nu.bin".into(),
+            FWFileKind::UiStm(_) => "ui_stm.bin".into(),
+            FWFileKind::UiNu2(_) => "ui_nu2.bin".into(),
+            FWFileKind::DspNu(_) => "dsp_nu.bin".into(),
+            FWFileKind::DspStm(_) => "dsp_stm.bin".into(),
+            FWFileKind::DspNu2(_) => "dsp_nu2.bin".into(),
+            FWFileKind::DspNu3(_) => "dsp_nu3.bin".into(),
+            FWFileKind::GpsNu(_) => "gps_nu.bin".into(),
+            FWFileKind::GpsStm(_) => "gps_stm.bin".into(),
+            FWFileKind::GpsNu2(_) => "gps_nu2.bin".into(),
+            FWFileKind::GpsNu3(_) => "gps_nu3.bin".into(),
+            FWFileKind::SoundDbnu(_) => "sound_dbnu.bin".into(),
+            FWFileKind::SoundDbla1(_) => "sound_dbla1.bin".into(),
+            FWFileKind::SoundDbla2(_) => "sound_dbla2.bin".into(),
+            FWFileKind::GpsDb(_) => "gps_db.bin".into(),
+            FWFileKind::GpsDbSecond(_) => "gps_db_second.bin".into(),
+            FWFileKind::Ble(_) => "ble.bin".into(),
+            FWFileKind::Keypad(_) => "keypad.bin".into(),
+            FWFileKind::LaserIf(_) => "laser_if.bin".into(),
         }
     }
 }
 
-pub fn handle_gpsdb_file_info(file: &FWFile) -> Option<&GpsDbFileInfo> {
+pub struct FWFile {
+    pub(crate) kind: FWFileKind,
+    pub(crate) info: FileInfo,
+}
+
+pub fn handle_gpsdb_file_info(file: &FWFileKind) -> Option<&GpsDbFileInfo> {
     match file {
-        FWFile::GpsDb(gps_db_file_info) | FWFile::GpsDbSecond(gps_db_file_info) => {
+        FWFileKind::GpsDb(gps_db_file_info) | FWFileKind::GpsDbSecond(gps_db_file_info) => {
             Some(gps_db_file_info)
         }
         _ => None,
     }
 }
 
-pub fn handle_file_info(file: &FWFile) -> Option<&FileInfo> {
+pub fn handle_file_info(file: &FWFileKind) -> Option<&FileInfo> {
     match file {
-        FWFile::UiNu(file_info)
-        | FWFile::UiStm(file_info)
-        | FWFile::UiNu2(file_info)
-        | FWFile::DspNu(file_info)
-        | FWFile::DspStm(file_info)
-        | FWFile::DspNu2(file_info)
-        | FWFile::DspNu3(file_info)
-        | FWFile::GpsNu(file_info)
-        | FWFile::GpsStm(file_info)
-        | FWFile::GpsNu2(file_info)
-        | FWFile::GpsNu3(file_info)
-        | FWFile::SoundDbnu(file_info)
-        | FWFile::SoundDbla1(file_info)
-        | FWFile::SoundDbla2(file_info)
-        | FWFile::Ble(file_info)
-        | FWFile::Keypad(file_info)
-        | FWFile::LaserIf(file_info) => Some(file_info),
+        FWFileKind::UiNu(file_info)
+        | FWFileKind::UiStm(file_info)
+        | FWFileKind::UiNu2(file_info)
+        | FWFileKind::DspNu(file_info)
+        | FWFileKind::DspStm(file_info)
+        | FWFileKind::DspNu2(file_info)
+        | FWFileKind::DspNu3(file_info)
+        | FWFileKind::GpsNu(file_info)
+        | FWFileKind::GpsStm(file_info)
+        | FWFileKind::GpsNu2(file_info)
+        | FWFileKind::GpsNu3(file_info)
+        | FWFileKind::SoundDbnu(file_info)
+        | FWFileKind::SoundDbla1(file_info)
+        | FWFileKind::SoundDbla2(file_info)
+        | FWFileKind::Ble(file_info)
+        | FWFileKind::Keypad(file_info)
+        | FWFileKind::LaserIf(file_info) => Some(file_info),
         _ => None,
     }
 }
@@ -183,11 +196,15 @@ impl UnidenFirmware {
             }
 
             metadata.model = model;
-            files.push(FWFile::UiNu(FileInfo {
+            let info = FileInfo::Base(FileInfoBase {
                 length: ui_nu_len,
                 offset: ui_nu_offset as i32,
                 version: ui_nu_version as i32,
-            }));
+            });
+            files.push(FWFile {
+                kind: FWFileKind::UiNu(info),
+                info: info,
+            });
         }
 
         if dsp_nu_len != 0 {
@@ -196,11 +213,15 @@ impl UnidenFirmware {
                 panic!("Wrong format.");
             }
 
-            files.push(FWFile::DspNu(FileInfo {
+            let info = FileInfo::Base(FileInfoBase {
                 length: dsp_nu_len,
-                offset,
-                version,
-            }));
+                offset: offset,
+                version: version,
+            });
+            files.push(FWFile {
+                kind: FWFileKind::DspNu(info),
+                info: info,
+            });
         }
 
         if gps_nu_len != 0 {
@@ -209,11 +230,15 @@ impl UnidenFirmware {
                 panic!("Wrong format.");
             }
 
-            files.push(FWFile::GpsNu(FileInfo {
+            let info = FileInfo::Base(FileInfoBase {
                 length: dsp_nu_len,
-                offset,
-                version,
-            }));
+                offset: offset,
+                version: version,
+            });
+            files.push(FWFile {
+                kind: FWFileKind::GpsNu(info),
+                info: info,
+            });
         }
 
         if sound_db_nu_len != 0 {
@@ -230,11 +255,15 @@ impl UnidenFirmware {
                 panic!("Wrong format.");
             }
 
-            files.push(FWFile::SoundDbnu(FileInfo {
+            let info = FileInfo::Base(FileInfoBase {
                 length: sound_db_nu_len,
-                offset,
-                version,
-            }));
+                offset: offset,
+                version: version,
+            });
+            files.push(FWFile {
+                kind: FWFileKind::SoundDbnu(info),
+                info: info,
+            });
         }
 
         if cursor.position() == cursor.get_ref().len() as u64 {
@@ -253,9 +282,11 @@ impl UnidenFirmware {
                     let arr = cursor.read_n(12)?;
                     let gps_db = stfu!(arr[8..]);
                     let mut file = GpsDbFileInfo {
-                        length: current_length,
-                        offset: current_offset as i32,
-                        version: 0,
+                        info: FileInfoBase {
+                            length: current_length,
+                            offset: current_offset as i32,
+                            version: 0,
+                        },
                         poi: 0,
                         file_type: GpsDbType::Unknown,
                         country: None,
@@ -287,7 +318,7 @@ impl UnidenFirmware {
                         panic!("Malformed GPS DB File Info!");
                     }
 
-                    file.version = i32::from_le_bytes(arr[4..8].try_into().unwrap());
+                    file.info.version = i32::from_le_bytes(arr[4..8].try_into().unwrap());
 
                     if switch == "GASD" {
                         cursor.seek(2);
@@ -301,8 +332,14 @@ impl UnidenFirmware {
                     }
 
                     files.push(match switch.as_ref() {
-                        "GPSD" => FWFile::GpsDb(file),
-                        "GASD" => FWFile::GpsDbSecond(file),
+                        "GPSD" => FWFile {
+                            kind: FWFileKind::GpsDb(file),
+                            info: FileInfo::GpsDb(file),
+                        },
+                        "GASD" => FWFile {
+                            kind: FWFileKind::GpsDbSecond(file),
+                            info: FileInfo::GpsDb(file),
+                        },
                         _ => unreachable!(),
                     });
                 }
@@ -318,24 +355,57 @@ impl UnidenFirmware {
                         panic!("Wrong termination sequence: {}", switch)
                     }
 
-                    let file = FileInfo {
-                        length,
-                        offset,
-                        version,
+                    let file = FileInfoBase {
+                        length: length,
+                        offset: offset,
+                        version: version,
                     };
 
                     files.push(match switch.as_ref() {
-                        "BLES" => FWFile::Ble(file),
-                        "KEYS" => FWFile::Keypad(file),
-                        "LSRS" => FWFile::LaserIf(file),
-                        "STUI" => FWFile::UiStm(file),
-                        "STDS" => FWFile::DspStm(file),
-                        "STGP" => FWFile::GpsStm(file),
-                        "N2UI" => FWFile::UiNu2(file),
-                        "N2DS" => FWFile::DspNu2(file),
-                        "N3DS" => FWFile::DspNu3(file),
-                        "N2GP" => FWFile::GpsNu2(file),
-                        "N3GP" => FWFile::GpsNu3(file),
+                        "BLES" => FWFile {
+                            kind: FWFileKind::Ble(FileInfo::Base(file)),
+                            info: FileInfo::Base(file),
+                        },
+                        "KEYS" => FWFile {
+                            kind: FWFileKind::Keypad(FileInfo::Base(file)),
+                            info: FileInfo::Base(file),
+                        },
+                        "LSRS" => FWFile {
+                            kind: FWFileKind::LaserIf(FileInfo::Base(file)),
+                            info: FileInfo::Base(file),
+                        },
+                        "STUI" => FWFile {
+                            kind: FWFileKind::UiStm(FileInfo::Base(file)),
+                            info: FileInfo::Base(file),
+                        },
+                        "STDS" => FWFile {
+                            kind: FWFileKind::DspStm(FileInfo::Base(file)),
+                            info: FileInfo::Base(file),
+                        },
+                        "STGP" => FWFile {
+                            kind: FWFileKind::GpsStm(FileInfo::Base(file)),
+                            info: FileInfo::Base(file),
+                        },
+                        "N2UI" => FWFile {
+                            kind: FWFileKind::UiNu2(FileInfo::Base(file)),
+                            info: FileInfo::Base(file),
+                        },
+                        "N2DS" => FWFile {
+                            kind: FWFileKind::DspNu2(FileInfo::Base(file)),
+                            info: FileInfo::Base(file),
+                        },
+                        "N3DS" => FWFile {
+                            kind: FWFileKind::DspNu3(FileInfo::Base(file)),
+                            info: FileInfo::Base(file),
+                        },
+                        "N2GP" => FWFile {
+                            kind: FWFileKind::GpsNu2(FileInfo::Base(file)),
+                            info: FileInfo::Base(file),
+                        },
+                        "N3GP" => FWFile {
+                            kind: FWFileKind::GpsNu3(FileInfo::Base(file)),
+                            info: FileInfo::Base(file),
+                        },
                         _ => unreachable!(),
                     });
                 }
@@ -356,15 +426,21 @@ impl UnidenFirmware {
                         panic!("Wrong termination sequence: {}", switch)
                     }
 
-                    let file = FileInfo {
+                    let file = FileInfoBase {
                         length: current_length,
                         offset: current_offset as i32,
                         version: version as i32,
                     };
 
                     files.push(match switch.as_ref() {
-                        "STSD" => FWFile::SoundDbla1(file),
-                        "SUSD" => FWFile::SoundDbla2(file),
+                        "STSD" => FWFile {
+                            kind: FWFileKind::SoundDbla1(FileInfo::Base(file)),
+                            info: FileInfo::Base(file),
+                        },
+                        "SUSD" => FWFile {
+                            kind: FWFileKind::SoundDbla2(FileInfo::Base(file)),
+                            info: FileInfo::Base(file),
+                        },
                         _ => unreachable!(),
                     });
                 }
@@ -390,9 +466,14 @@ impl UnidenFirmware {
         Ok(())
     }
 
-    pub fn extract_to(&self, directory: &str) {
-        // for file in self.files {
-        //     // let content = &self.buffer[]
-        // }
+    pub fn extract_to(&self, directory: &path::Path) {
+        for file in &self.files {
+            // let content = &self.buffer[]
+            let mut fpath = path::PathBuf::from(directory);
+            fpath.push(file.kind.to_file_name());
+            let f = fs::File::create(&fpath)
+                .unwrap_or_else(|_| panic!("Couldn't create output file: {}", fpath.display()));
+            // f.write_all(self.buffer[])
+        }
     }
 }
