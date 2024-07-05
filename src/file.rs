@@ -5,6 +5,7 @@ use crate::format::{
 };
 use crate::util::{alter_length, CursorHelper};
 use std::io::Cursor;
+use std::path::PathBuf;
 use std::{fs, io};
 
 struct FileInfo {
@@ -72,31 +73,32 @@ impl FWFile {
 
 pub fn handle_gpsdb_file_info(file: &FWFile) -> Option<&GpsDbFileInfo> {
     match file {
-        FWFile::GpsDb(gps_db_file_info) |
-        FWFile::GpsDbSecond(gps_db_file_info) => Some(gps_db_file_info),
+        FWFile::GpsDb(gps_db_file_info) | FWFile::GpsDbSecond(gps_db_file_info) => {
+            Some(gps_db_file_info)
+        }
         _ => None,
     }
 }
 
 pub fn handle_file_info(file: &FWFile) -> Option<&FileInfo> {
     match file {
-        FWFile::UiNu(file_info) |
-        FWFile::UiStm(file_info) |
-        FWFile::UiNu2(file_info) |
-        FWFile::DspNu(file_info) |
-        FWFile::DspStm(file_info) |
-        FWFile::DspNu2(file_info) |
-        FWFile::DspNu3(file_info) |
-        FWFile::GpsNu(file_info) |
-        FWFile::GpsStm(file_info) |
-        FWFile::GpsNu2(file_info) |
-        FWFile::GpsNu3(file_info) |
-        FWFile::SoundDbnu(file_info) |
-        FWFile::SoundDbla1(file_info) |
-        FWFile::SoundDbla2(file_info) |
-        FWFile::Ble(file_info) |
-        FWFile::Keypad(file_info) |
-        FWFile::LaserIf(file_info) => Some(file_info),
+        FWFile::UiNu(file_info)
+        | FWFile::UiStm(file_info)
+        | FWFile::UiNu2(file_info)
+        | FWFile::DspNu(file_info)
+        | FWFile::DspStm(file_info)
+        | FWFile::DspNu2(file_info)
+        | FWFile::DspNu3(file_info)
+        | FWFile::GpsNu(file_info)
+        | FWFile::GpsStm(file_info)
+        | FWFile::GpsNu2(file_info)
+        | FWFile::GpsNu3(file_info)
+        | FWFile::SoundDbnu(file_info)
+        | FWFile::SoundDbla1(file_info)
+        | FWFile::SoundDbla2(file_info)
+        | FWFile::Ble(file_info)
+        | FWFile::Keypad(file_info)
+        | FWFile::LaserIf(file_info) => Some(file_info),
         _ => None,
     }
 }
@@ -131,7 +133,7 @@ pub struct UnidenFirmware {
 }
 
 impl UnidenFirmware {
-    pub fn from(file_path: &str) -> Result<UnidenFirmware, String> {
+    pub fn from(file_path: &PathBuf) -> Result<UnidenFirmware, String> {
         let buffer = fs::read(file_path).map_err(|e| e.to_string())?;
 
         Ok(Self {
