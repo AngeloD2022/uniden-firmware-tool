@@ -174,7 +174,7 @@ impl UnidenFirmware {
 
         let mut sound_db_nu_len = 0;
         if flag_includes_sound_db == 1 {
-            let slice = &cursor.read_n(12)?[9..];
+            let slice = &cursor.read_n(12)?[8..];
             sound_db_nu_len = i32::from_le_bytes(slice.try_into().unwrap());
         }
 
