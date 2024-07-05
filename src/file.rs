@@ -115,7 +115,7 @@ fn parse_file_basic(cursor: &mut Cursor<&Vec<u8>>, length: i32) -> io::Result<(i
     let arr = cursor.read_n(9)?;
     let version = rd_version(i16::from_le_bytes(arr[0..2].try_into().unwrap())) as i32;
     let end_string = String::from_utf8(arr[2..].to_vec()).unwrap();
-    return Ok((offset, version, end_string));
+    Ok((offset, version, end_string))
 }
 
 macro_rules! stfu {
@@ -258,7 +258,7 @@ impl UnidenFirmware {
                         file_type: GpsDbType::Unknown,
                         country: None,
                     };
-                    if OLD_FILE_GPS_DB_IDENTIFY_STR.contains(&&**&gps_db) {
+                    if OLD_FILE_GPS_DB_IDENTIFY_STR.contains(&&*gps_db) {
                         file.file_type = GpsDbType::GpsDbOldEnc;
                         let (key, country) = match gps_db.as_ref() {
                             "LRDB" => (OLD_US_GPS_DB_KEY, GpsDbCountry::Us),
@@ -270,7 +270,7 @@ impl UnidenFirmware {
                         file.poi = i32::from_le_bytes(
                             decode_old_model(key, &arr, 0, 4).try_into().unwrap(),
                         );
-                    } else if NEW_FILE_GPS_DB_IDENTIFY_STR.contains(&&**&gps_db) {
+                    } else if NEW_FILE_GPS_DB_IDENTIFY_STR.contains(&&*gps_db) {
                         file.file_type = GpsDbType::GpsDbAes128;
                         let country = match gps_db.as_ref() {
                             "AEUS" => GpsDbCountry::Us,
@@ -308,7 +308,7 @@ impl UnidenFirmware {
                 | "N2GP" | "N3GP" => {
                     let length_modifier = if switch == "BLES" { 1024 } else { 512 };
                     let length = (current_length / length_modifier + 1) * length_modifier;
-                    let expected_termstr = format!("DRSW{}", switch[0..3].to_string());
+                    let expected_termstr = format!("DRSW{}", &switch[0..3]);
 
                     let (offset, version, term_str) = parse_file_basic(&mut cursor, length)?;
 
@@ -338,7 +338,7 @@ impl UnidenFirmware {
                     });
                 }
                 "STSD" | "SUSD" => {
-                    let expected_termstr = format!("DRSW{}", switch[0..3].to_string());
+                    let expected_termstr = format!("DRSW{}", &switch[0..3]);
                     cursor.seek(current_length as u64 - 12);
 
                     let arr = cursor.read_n(12)?;
@@ -355,7 +355,7 @@ impl UnidenFirmware {
                     }
 
                     let file = FileInfo {
-                        length: current_length as i32,
+                        length: current_length,
                         offset: current_offset as i32,
                         version: version as i32,
                     };

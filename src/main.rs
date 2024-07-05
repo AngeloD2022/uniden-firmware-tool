@@ -3,7 +3,6 @@ mod format;
 mod util;
 
 use crate::file::UnidenFirmware;
-use binrw::{BinRead, BinReaderExt};
 
 const TEST_FILE: &str = "./R8_v128.106.116_db240402.bin";
 
