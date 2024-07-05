@@ -3,10 +3,13 @@ use crate::format::{
     OLD_FILE_GPS_DB_IDENTIFY_STR, OLD_IL_GPS_DB_KEY, OLD_NZ_GPS_DB_KEY, OLD_US_GPS_DB_KEY,
     SOUND_DB_KEY,
 };
-use crate::util::{alter_length, CursorHelper};
-use std::io::{Cursor, Write};
+use crate::util::{alter_length, CursorHelper, TrackingCursor};
+use rust_lapper::{Interval, Lapper};
+use std::io::Write;
 use std::path::PathBuf;
 use std::{fs, io, path};
+
+type Iv = Interval<u64, ()>;
 
 #[derive(Clone, Copy)]
 struct FileInfoBase {
@@ -121,7 +124,7 @@ pub struct FWMetadata {
 }
 
 /// (offset, version, end string)
-fn parse_file_basic(cursor: &mut Cursor<&Vec<u8>>, length: i32) -> io::Result<(i32, i32, String)> {
+fn parse_file_basic(cursor: &mut TrackingCursor, length: i32) -> io::Result<(i32, i32, String)> {
     let offset = cursor.position() as i32;
     cursor.seek(length as u64);
 
@@ -140,18 +143,58 @@ macro_rules! stfu {
 pub struct UnidenFirmware {
     pub metadata: Option<FWMetadata>,
     pub(crate) files: Vec<FWFile>,
+    pub size: u64,
     buffer: Vec<u8>,
+    read_intervals: Vec<Iv>,
+    unread_intervals: Vec<Iv>,
 }
 
 impl UnidenFirmware {
     pub fn from(file_path: &PathBuf) -> Result<UnidenFirmware, String> {
-        let buffer = fs::read(file_path).map_err(|e| e.to_string())?;
-
+        let buffer: Vec<u8> = fs::read(file_path).map_err(|e| e.to_string())?;
+        let sz = buffer.len() as u64;
         Ok(Self {
             metadata: None,
             files: vec![],
-            buffer,
+            size: sz,
+            buffer: buffer,
+            read_intervals: vec![],
+            unread_intervals: vec![Iv {
+                start: 0,
+                stop: sz,
+                val: (),
+            }],
         })
+    }
+
+    fn update_unread_intervals(&mut self) {
+        let mut new_unread_intervals: Vec<Iv> = vec![];
+        let mut cur_pos = 0u64;
+        for iv in &self.read_intervals {
+            if iv.start > cur_pos {
+                new_unread_intervals.push(Iv {
+                    start: cur_pos,
+                    stop: iv.start - 1,
+                    val: (),
+                });
+            }
+            cur_pos = iv.stop;
+        }
+        if cur_pos < self.buffer.len() as u64 {
+            new_unread_intervals.push(Iv {
+                start: cur_pos,
+                stop: self.buffer.len() as u64,
+                val: (),
+            });
+        }
+        self.unread_intervals = new_unread_intervals;
+    }
+
+    fn update_intervals(&mut self) {
+        let mut lapper = Lapper::new(self.read_intervals.clone());
+        lapper.merge_overlaps();
+        self.read_intervals = lapper.intervals;
+        self.update_unread_intervals();
     }
 
     pub fn read_buffer(&mut self) -> io::Result<()> {
@@ -162,7 +205,8 @@ impl UnidenFirmware {
             new_merge_file: false,
         };
 
-        let mut cursor = Cursor::new(&self.buffer);
+        let mut cursor: TrackingCursor =
+            TrackingCursor::new(&self.buffer, &mut self.read_intervals);
 
         let first_element = i32::from_le_bytes(cursor.read_n(4)?.try_into().unwrap());
 
@@ -264,11 +308,11 @@ impl UnidenFirmware {
             });
         }
 
-        if cursor.position() == cursor.get_ref().len() as u64 {
+        if cursor.position() == self.size {
             return Ok(());
         }
 
-        while cursor.position() != cursor.get_ref().len() as u64 {
+        while cursor.position() != self.size {
             let arr = cursor.read_n(12)?;
             let switch = String::from_utf8(arr[0..4].to_vec()).unwrap();
             let current_length = i32::from_le_bytes(arr[8..].try_into().unwrap());
@@ -443,7 +487,7 @@ impl UnidenFirmware {
                     });
                 }
                 "NMGF" => {
-                    if cursor.position() == cursor.get_ref().len() as u64 {
+                    if cursor.position() == self.size {
                         metadata.new_merge_file = true;
                         metadata.format_version = i32::from_le_bytes(arr[8..12].try_into().unwrap())
                     }
@@ -460,29 +504,76 @@ impl UnidenFirmware {
 
         self.files = files;
         self.metadata = Some(metadata);
+        self.update_intervals();
 
         Ok(())
     }
 
-    pub fn extract_to(&self, directory: &path::Path) {
+    pub fn extract_to(&mut self, directory: &path::Path) {
+        let mut cursor: TrackingCursor =
+            TrackingCursor::new(&self.buffer, &mut self.read_intervals);
         for file in &self.files {
-            // let content = &self.buffer[]
             let mut fpath = path::PathBuf::from(directory);
             fpath.push(file.kind.to_file_name());
             let mut f = fs::File::create(&fpath)
                 .unwrap_or_else(|_| panic!("Couldn't create output file: {}", fpath.display()));
             if let FileInfo::Base(fib) = file.info {
+                cursor.seek_set(fib.offset as u64);
                 f.write_all(
-                    &self.buffer[fib.offset as usize..fib.offset as usize + fib.length as usize],
+                    cursor
+                        .read_n(fib.length as usize)
+                        .unwrap_or_else(|_| {
+                            panic!("Couldn't read firmware inner file: {}", fpath.display())
+                        })
+                        .as_ref(),
                 )
                 .unwrap_or_else(|_| panic!("Couldn't write output file: {}", fpath.display()));
-            } else if let FileInfo::GpsDb(figps) = file.info {
+            } else if let FileInfo::GpsDb(fibgps) = file.info {
+                cursor.seek_set(fibgps.info.offset as u64);
                 f.write_all(
-                    &self.buffer[figps.info.offset as usize
-                        ..figps.info.offset as usize + figps.info.length as usize],
+                    cursor
+                        .read_n(fibgps.info.length as usize)
+                        .unwrap_or_else(|_| {
+                            panic!("Couldn't read firmware inner file: {}", fpath.display())
+                        })
+                        .as_ref(),
                 )
                 .unwrap_or_else(|_| panic!("Couldn't write output file: {}", fpath.display()));
             }
+        }
+        self.update_intervals();
+    }
+
+    pub fn print_intervals(&self) {
+        println!(
+            "Firmware binary [{:#010x}, {:#010x}) read intervals (count: {}):",
+            0,
+            self.size,
+            self.read_intervals.len()
+        );
+        for iv in &self.read_intervals {
+            println!(
+                "[{:#010x} -> {:#010x}] {:#x} ({}) bytes",
+                iv.start,
+                iv.stop - 1,
+                iv.stop - iv.start,
+                iv.stop - iv.start
+            );
+        }
+        println!(
+            "Firmware binary [{:#010x}, {:#010x}) unread intervals (count: {}):",
+            0,
+            self.size,
+            self.unread_intervals.len()
+        );
+        for iv in &self.unread_intervals {
+            println!(
+                "[{:#010x} -> {:#010x}] {:#x} ({}) bytes",
+                iv.start,
+                iv.stop,
+                iv.stop - iv.start + 1,
+                iv.stop - iv.start + 1
+            );
         }
     }
 }
