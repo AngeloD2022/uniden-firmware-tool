@@ -29,12 +29,6 @@ pub enum FileInfo {
     GpsDb(GpsDbFileInfo),
 }
 
-// impl From<FileInfo> for FileInfoBase {
-//     fn from(fi: FileInfo) -> Self {
-
-//     }
-// }
-
 pub enum FWFileKind {
     UiNu(FileInfo),
     UiStm(FileInfo),
