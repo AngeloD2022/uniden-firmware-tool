@@ -4,9 +4,7 @@ use crate::format::{
     SOUND_DB_KEY,
 };
 use crate::util::{alter_length, CursorHelper};
-use std::any::Any;
 use std::io::{Cursor, Write};
-use std::ops::Deref;
 use std::path::PathBuf;
 use std::{fs, io, path};
 
@@ -209,7 +207,7 @@ impl UnidenFirmware {
             });
             files.push(FWFile {
                 kind: FWFileKind::UiNu(info),
-                info: info,
+                info,
             });
         }
 
@@ -221,12 +219,12 @@ impl UnidenFirmware {
 
             let info = FileInfo::Base(FileInfoBase {
                 length: dsp_nu_len,
-                offset: offset,
-                version: version,
+                offset,
+                version,
             });
             files.push(FWFile {
                 kind: FWFileKind::DspNu(info),
-                info: info,
+                info,
             });
         }
 
@@ -238,12 +236,12 @@ impl UnidenFirmware {
 
             let info = FileInfo::Base(FileInfoBase {
                 length: dsp_nu_len,
-                offset: offset,
-                version: version,
+                offset,
+                version,
             });
             files.push(FWFile {
                 kind: FWFileKind::GpsNu(info),
-                info: info,
+                info,
             });
         }
 
@@ -263,12 +261,12 @@ impl UnidenFirmware {
 
             let info = FileInfo::Base(FileInfoBase {
                 length: sound_db_nu_len,
-                offset: offset,
-                version: version,
+                offset,
+                version,
             });
             files.push(FWFile {
                 kind: FWFileKind::SoundDbnu(info),
-                info: info,
+                info,
             });
         }
 
@@ -362,9 +360,9 @@ impl UnidenFirmware {
                     }
 
                     let file = FileInfoBase {
-                        length: length,
-                        offset: offset,
-                        version: version,
+                        length,
+                        offset,
+                        version,
                     };
 
                     files.push(match switch.as_ref() {
