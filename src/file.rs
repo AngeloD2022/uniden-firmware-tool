@@ -31,6 +31,12 @@ pub enum FileInfo {
     GpsDb(GpsDbFileInfo),
 }
 
+// impl From<FileInfo> for FileInfoBase {
+//     fn from(fi: FileInfo) -> Self {
+
+//     }
+// }
+
 pub enum FWFileKind {
     UiNu(FileInfo),
     UiStm(FileInfo),
@@ -471,9 +477,20 @@ impl UnidenFirmware {
             // let content = &self.buffer[]
             let mut fpath = path::PathBuf::from(directory);
             fpath.push(file.kind.to_file_name());
-            let f = fs::File::create(&fpath)
+            let mut f = fs::File::create(&fpath)
                 .unwrap_or_else(|_| panic!("Couldn't create output file: {}", fpath.display()));
-            // f.write_all(self.buffer[])
+            if let FileInfo::Base(fib) = file.info {
+                f.write_all(
+                    &self.buffer[fib.offset as usize..fib.offset as usize + fib.length as usize],
+                )
+                .unwrap_or_else(|_| panic!("Couldn't write output file: {}", fpath.display()));
+            } else if let FileInfo::GpsDb(figps) = file.info {
+                f.write_all(
+                    &self.buffer[figps.info.offset as usize
+                        ..figps.info.offset as usize + figps.info.length as usize],
+                )
+                .unwrap_or_else(|_| panic!("Couldn't write output file: {}", fpath.display()));
+            }
         }
     }
 }
