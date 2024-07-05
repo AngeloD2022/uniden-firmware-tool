@@ -3,44 +3,81 @@ mod format;
 mod util;
 use std::{fs, path};
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 
 use crate::file::UnidenFirmware;
 
-const TEST_FILE: &str = "./R8_v128.106.116_db240402.bin";
+
 
 #[derive(Parser, Debug)]
-#[command(version, about, long_about = None)]
+#[command(version = "0.1.0")]
+#[command(name = "Uniden R-Series Firmware BLOB Parser")]
+#[command(author = "@angelod2022 and @jevinskie")]
+#[command(
+    help_template = "{name}\nBy {author}\nVersion: {version}\n\n{usage-heading} {usage}\n{all-args} {tab}"
+)]
 struct Args {
-    /// Input firmware binary
-    #[arg(short, long)]
+    #[command(subcommand)]
+    pub subcmd: SubCmd,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum SubCmd {
+    Extract(ExtractSubcommand),
+    Parse(ParseSubcommand),
+}
+
+/// Extract the contents of a firmware BLOB
+#[derive(Parser, Debug)]
+struct ExtractSubcommand {
+    /// Input firmware BLOB
     firmware: path::PathBuf,
 
     /// Output directory
-    #[arg(short, long)]
     out_dir: Option<path::PathBuf>,
 }
 
+/// View the contents of a firmware BLOB
+#[derive(Parser, Debug)]
+struct ParseSubcommand {
+    /// Input firmware BLOB
+    firmware: path::PathBuf,
+}
+
+
 fn main() {
-    let args = Args::parse();
-    println!("Uniden Firmware BLOB Parser");
-    let mut firmware = UnidenFirmware::from(&args.firmware).unwrap();
-    firmware.read_buffer().unwrap();
-    if let Some(dir) = args.out_dir.as_ref().cloned() {
-        fs::create_dir_all(dir.as_path())
-            .unwrap_or_else(|_| panic!("Couldn't create output directory: {}", dir.display()))
+    let cmd = Args::parse();
+
+    match cmd.subcmd {
+        SubCmd::Extract(args) => {
+            let mut firmware = UnidenFirmware::from(&args.firmware).unwrap();
+            firmware.read_buffer().unwrap();
+
+            print_fw_contents(&firmware);
+
+            if let Some(dir) = args.out_dir.as_ref().cloned() {
+                fs::create_dir_all(dir.as_path())
+                    .unwrap_or_else(|_| panic!("Couldn't create output directory: {}", dir.display()))
+            }
+            if let Some(out_dir) = args.out_dir.as_ref().cloned() {
+                firmware.extract_to(out_dir.as_path());
+            }
+        }
+        SubCmd::Parse(args) => {
+            let mut firmware = UnidenFirmware::from(&args.firmware).unwrap();
+            firmware.read_buffer().unwrap();
+            print_fw_contents(&firmware);
+        }
     }
+}
 
+fn print_fw_contents(firmware: &UnidenFirmware) {
     let metadata = firmware.metadata.as_ref().unwrap();
-
-    println!("Firmware bundle version: {}", metadata.format_version);
+    println!("BLOB format version: {}", metadata.format_version);
     println!("Model: Uniden {}", metadata.model.to_name());
     println!("Embedded files: ");
     for file in &firmware.files {
         let name = file.kind.to_file_name();
         println!("   - {}", name);
-    }
-    if let Some(out_dir) = args.out_dir.as_ref().cloned() {
-        firmware.extract_to(out_dir.as_path())
     }
 }
