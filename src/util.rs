@@ -1,4 +1,4 @@
-use rust_lapper::{Interval, Lapper};
+use rust_lapper::Interval;
 use std::io;
 use std::io::{Cursor, Read};
 use std::ops::{Deref, DerefMut};
@@ -30,21 +30,15 @@ pub trait CursorHelper {
 
 pub struct TrackingCursor<'a> {
     cursor: Cursor<&'a Vec<u8>>,
-    intervals: Vec<Iv>,
+    read_intervals: &'a mut Vec<Iv>,
 }
 
 impl<'a> TrackingCursor<'a> {
-    pub fn new(data: &'a Vec<u8>) -> Self {
+    pub fn new(data: &'a Vec<u8>, read_intervals: &'a mut Vec<Iv>) -> Self {
         TrackingCursor {
             cursor: Cursor::new(data),
-            intervals: Vec::new(),
+            read_intervals: read_intervals,
         }
-    }
-    pub fn intervals(&self) -> Lapper<u64, ()> {
-        let mut lapper = Lapper::new(self.intervals.clone());
-        lapper.merge_overlaps();
-        lapper.set_cov();
-        lapper
     }
 }
 
@@ -65,7 +59,7 @@ impl<'a> DerefMut for TrackingCursor<'a> {
 impl CursorHelper for TrackingCursor<'_> {
     fn pop(&mut self) -> io::Result<u8> {
         let r = read_n_bytes(self, 1)?;
-        self.intervals.push(Iv {
+        self.read_intervals.push(Iv {
             start: self.position(),
             stop: self.position() + 1,
             val: (),
@@ -76,7 +70,7 @@ impl CursorHelper for TrackingCursor<'_> {
     fn read_n(&mut self, n: usize) -> io::Result<Vec<u8>> {
         let r = read_n_bytes(self, n);
         if let Ok(ref _r) = r {
-            self.intervals.push(Iv {
+            self.read_intervals.push(Iv {
                 start: self.position(),
                 stop: self.position() + (n as u64),
                 val: (),
