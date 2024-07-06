@@ -27,6 +27,7 @@ struct Args {
 pub enum SubCmd {
     Extract(ExtractSubcommand),
     Parse(ParseSubcommand),
+    Foo(FooSubcommand),
 }
 
 /// Extract the contents of a firmware BLOB
@@ -42,6 +43,13 @@ struct ExtractSubcommand {
 /// View the contents of a firmware BLOB
 #[derive(Parser, Debug)]
 struct ParseSubcommand {
+    /// Input firmware BLOB
+    firmware: path::PathBuf,
+}
+
+/// Foo
+#[derive(Parser, Debug)]
+struct FooSubcommand {
     /// Input firmware BLOB
     firmware: path::PathBuf,
 }
@@ -69,9 +77,15 @@ fn main() {
             }
         }
         SubCmd::Parse(args) => {
-            let mut firmware = UnidenFirmware::from(&args.firmware).unwrap();
+            let mut firmware: UnidenFirmware = UnidenFirmware::from(&args.firmware).unwrap();
             firmware.read_buffer().unwrap();
             print_fw_contents(&firmware, cmd.intervals);
+        }
+        SubCmd::Foo(args) => {
+            let mut firmware: UnidenFirmware = UnidenFirmware::from(&args.firmware).unwrap();
+            firmware.print_intervals();
+            firmware.foo();
+            firmware.print_intervals();
         }
     }
 }

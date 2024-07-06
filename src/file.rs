@@ -169,20 +169,20 @@ impl UnidenFirmware {
 
     fn update_unread_intervals(&mut self) {
         let mut new_unread_intervals: Vec<Iv> = vec![];
-        let mut pos_cur = 0u64;
+        let mut cur_pos = 0u64;
         for iv in &self.read_intervals {
-            if iv.start > pos_cur {
+            if iv.start > cur_pos {
                 new_unread_intervals.push(Iv {
-                    start: pos_cur,
+                    start: cur_pos,
                     stop: iv.start - 1,
                     val: (),
                 });
             }
-            pos_cur = iv.stop;
+            cur_pos = iv.stop;
         }
-        if pos_cur < self.buffer.len() as u64 {
+        if cur_pos < self.buffer.len() as u64 {
             new_unread_intervals.push(Iv {
-                start: pos_cur,
+                start: cur_pos,
                 stop: self.buffer.len() as u64,
                 val: (),
             });
@@ -544,6 +544,20 @@ impl UnidenFirmware {
         self.update_intervals();
     }
 
+    pub fn foo(&mut self) {
+        let mut cursor: TrackingCursor =
+            TrackingCursor::new(&self.buffer, &mut self.read_intervals);
+        cursor.seek(1);
+        let _ = cursor.pop();
+        // let _ = cursor.read_n(4);
+        // let _ = cursor.read_n(4);
+        cursor.seek_set(0x10);
+        let _ = cursor.read_n(13);
+        cursor.seek_set(0x100);
+        let _ = cursor.read_n(0x10);
+        self.update_intervals();
+    }
+
     pub fn print_intervals(&self) {
         println!(
             "Firmware binary [{:#010x}, {:#010x}) read intervals (count: {}):",
@@ -553,11 +567,11 @@ impl UnidenFirmware {
         );
         for iv in &self.read_intervals {
             println!(
-                "[{:#010x} -> {:#010x}) {:#x} ({}) bytes",
+                "[{:#010x} -> {:#010x}] {:#x} ({}) bytes",
                 iv.start,
-                iv.stop,
-                iv.stop - iv.start + 1,
-                iv.stop - iv.start + 1
+                iv.stop - 1,
+                iv.stop - iv.start,
+                iv.stop - iv.start
             );
         }
         println!(
@@ -568,7 +582,7 @@ impl UnidenFirmware {
         );
         for iv in &self.unread_intervals {
             println!(
-                "[{:#010x} -> {:#010x}) {:#x} ({}) bytes",
+                "[{:#010x} -> {:#010x}] {:#x} ({}) bytes",
                 iv.start,
                 iv.stop,
                 iv.stop - iv.start + 1,

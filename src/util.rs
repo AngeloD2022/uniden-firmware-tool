@@ -58,21 +58,23 @@ impl<'a> DerefMut for TrackingCursor<'a> {
 
 impl CursorHelper for TrackingCursor<'_> {
     fn pop(&mut self) -> io::Result<u8> {
+        let orig_pos = self.position();
         let r = read_n_bytes(self, 1)?;
         self.read_intervals.push(Iv {
-            start: self.position(),
-            stop: self.position() + 1,
+            start: orig_pos,
+            stop: orig_pos + 1,
             val: (),
         });
         Ok(r[0])
     }
 
     fn read_n(&mut self, n: usize) -> io::Result<Vec<u8>> {
+        let orig_pos = self.position();
         let r = read_n_bytes(self, n);
         if let Ok(ref _r) = r {
             self.read_intervals.push(Iv {
-                start: self.position(),
-                stop: self.position() + (n as u64),
+                start: orig_pos,
+                stop: orig_pos + (n as u64),
                 val: (),
             });
         }
