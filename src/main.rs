@@ -17,10 +17,6 @@ use crate::file::UnidenFirmware;
 struct Args {
     #[command(subcommand)]
     pub subcmd: SubCmd,
-
-    /// Print read intervals
-    #[arg(short, long)]
-    intervals: bool,
 }
 
 #[derive(Subcommand, Debug)]
@@ -37,6 +33,10 @@ struct ExtractSubcommand {
 
     /// Output directory
     out_dir: Option<path::PathBuf>,
+
+    /// Print read intervals
+    #[arg(short, long)]
+    verbose: bool,
 }
 
 /// View the contents of a firmware BLOB
@@ -44,6 +44,10 @@ struct ExtractSubcommand {
 struct ParseSubcommand {
     /// Input firmware BLOB
     firmware: path::PathBuf,
+
+    /// Print read intervals
+    #[arg(short, long)]
+    verbose: bool,
 }
 
 fn main() {
@@ -54,7 +58,7 @@ fn main() {
             let mut firmware = UnidenFirmware::from(&args.firmware).unwrap();
             firmware.read_buffer().unwrap();
 
-            print_fw_contents(&firmware, false);
+            print_fw_contents(&firmware, args.verbose);
 
             if let Some(dir) = args.out_dir.as_ref().cloned() {
                 fs::create_dir_all(dir.as_path()).unwrap_or_else(|_| {
@@ -64,14 +68,11 @@ fn main() {
             if let Some(out_dir) = args.out_dir.as_ref().cloned() {
                 firmware.extract_to(out_dir.as_path());
             }
-            if cmd.intervals {
-                firmware.print_intervals();
-            }
         }
         SubCmd::Parse(args) => {
             let mut firmware: UnidenFirmware = UnidenFirmware::from(&args.firmware).unwrap();
             firmware.read_buffer().unwrap();
-            print_fw_contents(&firmware, cmd.intervals);
+            print_fw_contents(&firmware, args.verbose);
         }
     }
 }
