@@ -7,12 +7,14 @@ pub const OLD_FILE_GPS_DB_IDENTIFY_STR: [&str; 3] = ["LRDB", "DFDB", "IRDB"];
 
 pub const NEW_FILE_GPS_DB_IDENTIFY_STR: [&str; 4] = ["AEUS", "AENZ", "AEIL", "AEEU"];
 
+#[derive(Clone, Copy)]
 pub enum GpsDbType {
     GpsDbOldEnc,
     GpsDbAes128,
     Unknown,
 }
 
+#[derive(Clone, Copy)]
 pub enum GpsDbCountry {
     Us,
     Nz,
