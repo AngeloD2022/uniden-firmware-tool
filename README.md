@@ -16,4 +16,4 @@ Please create an issue and let me know if you have any insights about this encry
 
 ## License
 
-uniden-fw-extractor is licensed under AGPLv3
+uniden-fw-tool is licensed under AGPLv3
