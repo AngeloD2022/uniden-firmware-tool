@@ -1,6 +1,6 @@
-# uniden-fw-extractor
+# uniden-firmware-tool
 
-Parses and extracts firmware binaries from https://uniden.info
+As of right now, it only parses and extracts firmware binaries from https://uniden.info
 
 
 ## Known Issues
