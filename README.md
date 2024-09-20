@@ -2,6 +2,15 @@
 
 As of right now, it only parses and extracts firmware binaries from https://uniden.info
 
+## Building
+
+Building this project requires the Rust toolchain.
+
+```sh
+git clone https://github.com/AngeloD2022/uniden-firmware-tool.git && cd uniden-firmware-tool
+
+cargo build --release
+```
 
 ## Known Issues
 
